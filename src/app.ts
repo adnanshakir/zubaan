@@ -3,6 +3,9 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { homeRouter } from './routes/homeRoutes.js';
+import { lessonRouter } from './routes/lessonRoutes.js';
+import { onboardingRouter } from './routes/onboardingRoutes.js';
 import type { ApiResponse } from './types/common.js';
 
 const app = express();
@@ -23,6 +26,10 @@ app.get('/health', (_req, res) => {
 
   res.status(200).json(response);
 });
+
+app.use('/api/onboarding', onboardingRouter);
+app.use('/api/lessons', lessonRouter);
+app.use('/api/home', homeRouter);
 
 app.use(errorHandler);
 

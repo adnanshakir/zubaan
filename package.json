@@ -1,7 +1,7 @@
 {
-  "name": "jubaan",
+  "name": "zubaan",
   "version": "1.0.0",
-  "description": "Jubaan backend",
+  "description": "Zubaan backend",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -11,7 +11,9 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx src/seed/seed.ts"
   },
   "keywords": [],
   "dependencies": {
