@@ -5,11 +5,7 @@ import { lessons } from './lessons.js';
 
 async function seedLessons(): Promise<void> {
   for (const lesson of lessons) {
-    await Lesson.updateOne(
-      { slug: lesson.slug },
-      { $set: lesson },
-      { upsert: true },
-    );
+    await Lesson.updateOne({ slug: lesson.slug }, { $set: lesson }, { upsert: true });
   }
 }
 
@@ -19,9 +15,7 @@ async function runSeed(): Promise<void> {
   try {
     await seedLessons();
     const lessonCount = await Lesson.countDocuments();
-    console.log(
-      `Seeded ${lessons.length} lessons. ${lessonCount} lessons total.`,
-    );
+    console.log(`Seeded ${lessons.length} lessons. ${lessonCount} lessons total.`);
   } finally {
     await mongoose.disconnect();
   }

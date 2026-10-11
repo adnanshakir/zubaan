@@ -1,34 +1,12 @@
-export const languages = [
-  'hi',
-  'ta',
-  'te',
-  'mr',
-  'bn',
-  'kn',
-  'ml',
-  'gu',
-  'pa',
-  'or',
-] as const;
+export const languages = ['hi', 'ta', 'te', 'mr', 'bn', 'kn', 'ml', 'gu', 'pa', 'or'] as const;
 
 export type Language = (typeof languages)[number];
 
-export const levels = [
-  'beginner',
-  'elementary',
-  'intermediate',
-  'advanced',
-] as const;
+export const levels = ['beginner', 'elementary', 'intermediate', 'advanced'] as const;
 
 export type Level = (typeof levels)[number];
 
-export const goals = [
-  'daily_conversation',
-  'work',
-  'interviews',
-  'travel',
-  'confidence',
-] as const;
+export const goals = ['daily_conversation', 'work', 'interviews', 'travel', 'confidence'] as const;
 
 export type Goal = (typeof goals)[number];
 

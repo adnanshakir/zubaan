@@ -44,6 +44,6 @@ process.once('SIGINT', () => {
 });
 
 startServer().catch((error: unknown) => {
-  logger.error('Server startup failed', error);
+  logger.error({ err: error }, 'Server startup failed');
   process.exitCode = 1;
 });

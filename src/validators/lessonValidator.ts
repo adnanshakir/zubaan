@@ -15,6 +15,4 @@ export const lessonDetailRequestSchema = z.object({
 });
 
 export type LessonListQuery = z.infer<typeof lessonListRequestSchema>['query'];
-export type LessonDetailParams = z.infer<
-  typeof lessonDetailRequestSchema
->['params'];
+export type LessonDetailParams = z.infer<typeof lessonDetailRequestSchema>['params'];

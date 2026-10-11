@@ -41,8 +41,7 @@ export const lessons: LessonSeed[] = [
           userRole: 'New resident',
           situation: 'You meet a neighbour outside your apartment building.',
           goal: 'Introduce yourself and make a friendly first impression.',
-          openingLine:
-            'Hello! I have not seen you here before. Are you new to the building?',
+          openingLine: 'Hello! I have not seen you here before. Are you new to the building?',
           maxTurns: 4,
           targetPhrases: [
             'Hi, I am your new neighbour.',
@@ -90,8 +89,7 @@ export const lessons: LessonSeed[] = [
         roleplay: {
           aiRole: 'Manager',
           userRole: 'Team member',
-          situation:
-            'Your manager asks for a quick update during a team meeting.',
+          situation: 'Your manager asks for a quick update during a team meeting.',
           goal: 'Explain your progress, dependency, and next deadline.',
           openingLine: 'Can you give me a quick update on the project?',
           maxTurns: 4,
@@ -145,8 +143,7 @@ export const lessons: LessonSeed[] = [
           userRole: 'Candidate',
           situation: 'You are beginning a job interview.',
           goal: 'Introduce your relevant experience and motivation.',
-          openingLine:
-            'Thank you for joining us today. Could you tell me about yourself?',
+          openingLine: 'Thank you for joining us today. Could you tell me about yourself?',
           maxTurns: 5,
           targetPhrases: [
             'I have experience working with cross-functional teams.',
