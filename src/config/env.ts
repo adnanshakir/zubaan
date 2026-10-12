@@ -8,7 +8,7 @@ const envSchema = z
     MONGODB_URI: z.string().trim().min(1),
     JWT_SECRET: z.string().min(1),
     LLM_PROVIDER: z.enum(['mock', 'sarvam']),
-    TTS_PROVIDER: z.enum(['kokoro', 'sarvam']),
+    TTS_PROVIDER: z.enum(['kokoro', 'sarvam']).default('kokoro'),
     STT_PROVIDER: z.enum(['sarvam']).default('sarvam'),
     SARVAM_API_KEY: z
       .string()
@@ -29,7 +29,7 @@ const envSchema = z
       .refine((v) => v === undefined || (Number.isFinite(v) && v >= 0.5 && v <= 2), {
         message: 'Must be a number between 0.5 and 2',
       }),
-    SARVAM_TTS_TIMEOUT_MS: z.coerce.number().int().min(1000).default(15000),
+    SARVAM_TTS_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30000),
     SARVAM_STT_TIMEOUT_MS: z.coerce.number().int().min(1000).default(15000),
     STT_MAX_FILE_SIZE_BYTES: z.coerce
       .number()

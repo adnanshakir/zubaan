@@ -2,6 +2,34 @@ import { env } from '../../config/env.js';
 import { ApiError } from '../../utils/ApiError.js';
 import type { TtsLanguage, TtsProvider } from './index.js';
 
+/**
+ * Merge independently-decoded WAV buffers by stripping headers and
+ * concatenating raw PCM data under a single corrected header.
+ * Mirrors the approach used in `combineKokoroChunks`.
+ */
+function combineWavChunks(chunks: Buffer[]): Buffer {
+  const firstChunk = chunks[0];
+
+  if (!firstChunk || firstChunk.length <= 44) {
+    throw new ApiError(502, 'TTS provider returned invalid audio');
+  }
+
+  if (chunks.length === 1) {
+    return firstChunk;
+  }
+
+  const header = Buffer.from(firstChunk.subarray(0, 44));
+  const pcmChunks = chunks.map((chunk) => chunk.subarray(44));
+  const totalPcmBytes = pcmChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+
+  // RIFF chunk size = 36 + PCM data length
+  header.writeUInt32LE(36 + totalPcmBytes, 4);
+  // data sub-chunk size = PCM data length
+  header.writeUInt32LE(totalPcmBytes, 40);
+
+  return Buffer.concat([header, ...pcmChunks]);
+}
+
 type SarvamTtsSuccessResponse = {
   audios: string[];
 };
@@ -101,11 +129,17 @@ export const sarvamTtsProvider: TtsProvider = {
         throw new ApiError(502, 'TTS provider request failed');
       }
 
-      const audio = Buffer.from(payload.audios.join(''), 'base64');
+      const decodedChunks = payload.audios.map((b64) => {
+        const buf = Buffer.from(b64, 'base64');
 
-      if (audio.length === 0) {
-        throw new ApiError(502, 'TTS provider request failed');
-      }
+        if (buf.length <= 44) {
+          throw new ApiError(502, 'TTS provider returned invalid audio');
+        }
+
+        return buf;
+      });
+
+      const audio = combineWavChunks(decodedChunks);
 
       return {
         audio,
