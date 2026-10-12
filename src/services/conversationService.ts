@@ -118,42 +118,81 @@ export async function takeConversationTurn(
   conversationId: string,
   input: ConversationTurnInput,
 ) {
-  const conversation = await findOwnedConversation(user._id, conversationId);
+  const existingConversation = await findOwnedConversation(user._id, conversationId);
 
-  if (conversation.status !== 'active') {
-    throw new ApiError(409, 'Conversation is not active');
-  }
-
-  const lesson = await Lesson.findById(conversation.lessonId);
+  const lesson = await Lesson.findById(existingConversation.lessonId);
 
   if (!lesson) {
     throw new ApiError(404, 'Lesson not found');
   }
 
   const roleplay = getRoleplayStep(lesson.steps);
-  const completedUserTurns = countUserTurns(conversation.messages);
-  const turnsRemaining = Math.max(0, roleplay.maxTurns - completedUserTurns - 1);
 
-  conversation.messages.push({
-    role: 'user',
+  // Atomic conditional update: append user message only if conversation is
+  // active and current user turns are below maxTurns.
+  const userMessage = {
+    role: 'user' as const,
     text: input.text,
     createdAt: new Date(),
-  });
-  await conversation.save();
+  };
 
-  const output = await generateConversationResponse({
-    system: buildConversationPrompt({
-      roleplay,
-      user: {
-        level: user.level,
-        name: user.name ?? undefined,
+  const updatedConversation = await Conversation.findOneAndUpdate(
+    {
+      _id: conversationId,
+      userId: user._id,
+      status: 'active',
+      // Only match if the number of user messages is below maxTurns
+      $expr: {
+        $lt: [
+          {
+            $size: {
+              $filter: {
+                input: '$messages',
+                as: 'msg',
+                cond: { $eq: ['$$msg.role', 'user'] },
+              },
+            },
+          },
+          roleplay.maxTurns,
+        ],
       },
-      turnsRemaining,
-    }),
-    messages: toLlmMessages(conversation.messages),
-  });
+    },
+    {
+      $push: { messages: userMessage },
+    },
+    { new: true },
+  );
 
-  conversation.messages.push({
+  if (!updatedConversation) {
+    throw new ApiError(409, 'Cannot take turn: conversation is not active or has reached the maximum number of turns');
+  }
+
+  const completedUserTurns = countUserTurns(updatedConversation.messages);
+  const turnsRemaining = Math.max(0, roleplay.maxTurns - completedUserTurns);
+
+  let output;
+  try {
+    output = await generateConversationResponse({
+      system: buildConversationPrompt({
+        roleplay,
+        user: {
+          level: user.level,
+          name: user.name ?? undefined,
+        },
+        turnsRemaining,
+      }),
+      messages: toLlmMessages(updatedConversation.messages),
+    });
+  } catch (error) {
+    // Roll back the persisted user message so a failed response doesn't consume a turn
+    await Conversation.updateOne(
+      { _id: conversationId },
+      { $pop: { messages: 1 } },
+    );
+    throw error;
+  }
+
+  updatedConversation.messages.push({
     role: 'ai',
     text: output.reply,
     createdAt: new Date(),
@@ -162,12 +201,12 @@ export async function takeConversationTurn(
   const endConversation = turnsRemaining === 0 || output.endConversation;
 
   if (endConversation) {
-    conversation.status = 'completed';
-    conversation.endedAt = new Date();
-    conversation.durationSec = durationSince(conversation.startedAt);
+    updatedConversation.status = 'completed';
+    updatedConversation.endedAt = new Date();
+    updatedConversation.durationSec = durationSince(updatedConversation.startedAt);
   }
 
-  await conversation.save();
+  await updatedConversation.save();
 
   return {
     reply: output.reply,

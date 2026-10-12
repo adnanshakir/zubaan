@@ -24,7 +24,7 @@ export function buildConversationPrompt({
   turnsRemaining,
 }: BuildConversationPromptInput): string {
   const learnerName = user.name
-    ? `Learner name (for addressing only): ${user.name}`
+    ? `Learner name (for addressing only): <learner_name>${user.name.replace(/[\n\r`|<>{}[\]]/g, '').slice(0, 50)}</learner_name>`
     : 'Learner name: not provided';
 
   return [

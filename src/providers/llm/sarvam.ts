@@ -56,6 +56,7 @@ export const sarvamLlmProvider: LlmProvider = {
         'Content-Type': 'application/json',
         'api-subscription-key': apiKey,
       },
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
         model,
         messages: [
