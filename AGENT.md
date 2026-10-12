@@ -123,13 +123,31 @@ export interface TtsProvider {
     pace?: number;
   }): Promise<{ audio: Buffer; format: "wav" | "mp3"; durationMs?: number }>;
 }
+
+// providers/stt/index.ts
+export interface SttProvider {
+  transcribe(input: {
+    audio: Buffer;
+    mimeType: string;
+    languageCode?: string;
+  }): Promise<{
+    text: string;
+    languageCode: string | null;
+    durationSeconds?: number;
+    raw?: unknown;
+  }>;
+}
 ```
 
 ```env
 TTS_PROVIDER=sarvam        # sarvam | kokoro
-STT_PROVIDER=whisper       # whisper | sarvam
+STT_PROVIDER=sarvam        # sarvam (whisper may be added later)
 LLM_PROVIDER=...           # decided later; keep behind the interface
 SARVAM_API_KEY=
+SARVAM_TTS_TIMEOUT_MS=15000
+SARVAM_STT_TIMEOUT_MS=15000
+STT_MAX_FILE_SIZE_BYTES=10485760
+STT_MAX_DURATION_SECONDS=30
 MONGODB_URI=
 PORT=
 ```

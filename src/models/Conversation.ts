@@ -12,6 +12,11 @@ const conversationMessageSchema = new Schema(
       required: true,
       trim: true,
     },
+    audioUrl: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     createdAt: {
       type: Date,
       default: Date.now,
