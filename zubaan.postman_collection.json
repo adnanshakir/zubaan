@@ -25,6 +25,16 @@
       "key": "conversationId",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "speechAudioUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ttsProvider",
+      "value": "kokoro",
+      "type": "string"
     }
   ],
   "item": [
@@ -294,17 +304,22 @@
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
                   "pm.test('Status code is 201', function () {",
                   "    pm.response.to.have.status(201);",
                   "});",
                   "",
                   "const response = pm.response.json();",
+                  "pm.test('Conversation has AI opening message', function () {",
+                  "    pm.expect(response.messages).to.be.an('array').that.is.not.empty;",
+                  "    pm.expect(response.messages[0]).to.have.property('audioUrl');",
+                  "});",
+                  "",
                   "if (response.conversationId) {",
                   "    pm.collectionVariables.set('conversationId', response.conversationId);",
                   "}"
-                ],
-                "type": "text/javascript"
+                ]
               }
             }
           ],
@@ -343,12 +358,18 @@
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
                   "pm.test('Status code is 200', function () {",
                   "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.test('Turn returns reply and audioUrl field', function () {",
+                  "    pm.expect(response).to.have.property('reply');",
+                  "    pm.expect(response).to.have.property('audioUrl');",
                   "});"
-                ],
-                "type": "text/javascript"
+                ]
               }
             }
           ],
@@ -453,6 +474,150 @@
                 "api",
                 "conversations",
                 "{{conversationId}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Speech",
+      "item": [
+        {
+          "name": "TTS Kokoro (en-IN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.test('Provider is kokoro', function () {",
+                  "    pm.expect(response.provider).to.eql('kokoro');",
+                  "});",
+                  "pm.test('audioUrl is generated', function () {",
+                  "    pm.expect(response.audioUrl).to.be.a('string');",
+                  "    pm.expect(response.audioUrl.startsWith('/audio/')).to.eql(true);",
+                  "});",
+                  "pm.collectionVariables.set('speechAudioUrl', response.audioUrl);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{userId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello from Kokoro. This is a speech smoke test from Postman.\",\n  \"language\": \"en-IN\",\n  \"provider\": \"kokoro\",\n  \"voice\": \"af_heart\",\n  \"pace\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/speech/tts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "speech",
+                "tts"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TTS Kokoro Non-English (Expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.test('Returns Kokoro language error', function () {",
+                  "    pm.expect(response.error.message).to.eql('Kokoro supports English only');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{userId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"??????, ?? ?????? ???? ???? ???? ???\",\n  \"language\": \"hi-IN\",\n  \"provider\": \"kokoro\",\n  \"voice\": \"af_heart\",\n  \"pace\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/speech/tts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "speech",
+                "tts"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Generated Kokoro Audio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Audio response has bytes', function () {",
+                  "    pm.expect(pm.response.text().length).to.be.greaterThan(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{speechAudioUrl}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "{{speechAudioUrl}}"
               ]
             }
           },

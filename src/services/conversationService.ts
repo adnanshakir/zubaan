@@ -1,18 +1,22 @@
 import { isValidObjectId, type Types } from 'mongoose';
+import { env } from '../config/env.js';
 import { Conversation } from '../models/Conversation.js';
 import { Lesson, type RoleplayStep } from '../models/Lesson.js';
 import { buildConversationPrompt } from '../prompts/conversationPrompt.js';
-import { generateConversationResponse } from './conversationLlmService.js';
+import { synthesizeSpeech } from './speechService.js';
 import type { Level } from '../types/content.js';
+import { saveAudioToStorage } from '../utils/audioStorage.js';
 import { ApiError } from '../utils/ApiError.js';
 import type {
   ConversationStartInput,
   ConversationTurnInput,
 } from '../validators/conversationValidator.js';
+import { generateConversationResponse } from './conversationLlmService.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
   text: string;
+  audioUrl?: string | null;
   createdAt: Date;
 };
 
@@ -43,8 +47,41 @@ function toConversationMessage(message: ConversationMessage): ConversationMessag
   return {
     role: message.role,
     text: message.text,
+    audioUrl: message.audioUrl ?? null,
     createdAt: message.createdAt,
   };
+}
+
+function getConversationSpeechDefaults() {
+  if (env.TTS_PROVIDER === 'sarvam') {
+    return {
+      voice: env.SARVAM_TTS_VOICE,
+      pace: env.SARVAM_TTS_PACE,
+    };
+  }
+
+  return {
+    voice: undefined,
+    pace: undefined,
+  };
+}
+
+async function synthesizeConversationAudio(text: string): Promise<string | null> {
+  const defaults = getConversationSpeechDefaults();
+
+  try {
+    const speech = await synthesizeSpeech({
+      text,
+      language: 'en-IN',
+      provider: env.TTS_PROVIDER,
+      voice: defaults.voice,
+      pace: defaults.pace,
+    });
+
+    return await saveAudioToStorage(speech.audio, speech.format);
+  } catch {
+    return null;
+  }
 }
 
 export async function startConversation(userId: Types.ObjectId, input: ConversationStartInput) {
@@ -59,6 +96,8 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
   }
 
   const roleplay = getRoleplayStep(lesson.steps);
+  const openingAudioUrl = await synthesizeConversationAudio(roleplay.openingLine);
+
   const conversation = await Conversation.create({
     userId,
     lessonId: lesson._id,
@@ -67,6 +106,7 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
       {
         role: 'ai',
         text: roleplay.openingLine,
+        audioUrl: openingAudioUrl,
       },
     ],
   });
@@ -133,6 +173,7 @@ export async function takeConversationTurn(
   const userMessage = {
     role: 'user' as const,
     text: input.text,
+    audioUrl: null,
     createdAt: new Date(),
   };
 
@@ -164,7 +205,10 @@ export async function takeConversationTurn(
   );
 
   if (!updatedConversation) {
-    throw new ApiError(409, 'Cannot take turn: conversation is not active or has reached the maximum number of turns');
+    throw new ApiError(
+      409,
+      'Cannot take turn: conversation is not active or has reached the maximum number of turns',
+    );
   }
 
   const completedUserTurns = countUserTurns(updatedConversation.messages);
@@ -184,17 +228,16 @@ export async function takeConversationTurn(
       messages: toLlmMessages(updatedConversation.messages),
     });
   } catch (error) {
-    // Roll back the persisted user message so a failed response doesn't consume a turn
-    await Conversation.updateOne(
-      { _id: conversationId },
-      { $pop: { messages: 1 } },
-    );
+    await Conversation.updateOne({ _id: conversationId }, { $pop: { messages: 1 } });
     throw error;
   }
+
+  const aiAudioUrl = await synthesizeConversationAudio(output.reply);
 
   updatedConversation.messages.push({
     role: 'ai',
     text: output.reply,
+    audioUrl: aiAudioUrl,
     createdAt: new Date(),
   });
 
@@ -210,6 +253,7 @@ export async function takeConversationTurn(
 
   return {
     reply: output.reply,
+    audioUrl: aiAudioUrl,
     endConversation,
     turnsRemaining,
   };

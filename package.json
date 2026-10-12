@@ -13,7 +13,8 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "typecheck": "tsc --noEmit",
-    "seed": "tsx src/seed/seed.ts"
+    "seed": "tsx src/seed/seed.ts",
+    "bench:tts": "tsx src/scripts/benchTts.ts"
   },
   "keywords": [],
   "dependencies": {
