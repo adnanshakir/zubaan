@@ -1,4 +1,13 @@
+import { parseBuffer } from 'music-metadata';
+import { env } from '../config/env.js';
 import { SpeechLog } from '../models/SpeechLog.js';
+import {
+  getSttProvider,
+  resolveSttProviderName,
+  sarvamRestSttMimeTypes,
+  type SttLanguageCode,
+  type SttProviderName,
+} from '../providers/stt/index.js';
 import {
   getTtsProvider,
   resolveTtsProviderName,
@@ -38,7 +47,22 @@ export type SynthesizeSpeechStoredResult = {
   durationMs?: number;
 };
 
-function toApiError(error: unknown): ApiError {
+export type TranscribeSpeechInput = {
+  audio: Buffer;
+  mimeType: string;
+  languageCode?: SttLanguageCode;
+  provider?: SttProviderName;
+};
+
+export type TranscribeSpeechResult = {
+  text: string;
+  languageCode: string | null;
+  provider: SttProviderName;
+  totalMs: number;
+  durationSeconds: number;
+};
+
+function toTtsApiError(error: unknown): ApiError {
   if (error instanceof ApiError) {
     return error;
   }
@@ -46,11 +70,19 @@ function toApiError(error: unknown): ApiError {
   return new ApiError(502, 'TTS provider request failed');
 }
 
+function toSttApiError(error: unknown): ApiError {
+  if (error instanceof ApiError) {
+    return error;
+  }
+
+  return new ApiError(502, 'STT provider request failed');
+}
+
 function toShortErrorMessage(message: string): string {
   return message.length > 160 ? `${message.slice(0, 157)}...` : message;
 }
 
-async function writeSpeechLog(entry: {
+async function writeTtsSpeechLog(entry: {
   provider: TtsProviderName;
   voice?: string;
   pace?: number;
@@ -79,13 +111,81 @@ async function writeSpeechLog(entry: {
   } catch {
     logger.warn(
       {
+        kind: 'tts',
         provider: entry.provider,
-        chars: entry.chars,
         totalMs: entry.totalMs,
         ok: entry.ok,
       },
       'Failed to persist speech log',
     );
+  }
+}
+
+async function writeSttSpeechLog(entry: {
+  provider: SttProviderName;
+  languageCode: string;
+  mimeType: string;
+  audioSeconds: number;
+  audioBytes: number;
+  totalMs: number;
+  ok: boolean;
+  error?: string;
+}): Promise<void> {
+  try {
+    await SpeechLog.create({
+      kind: 'stt',
+      provider: entry.provider,
+      language: entry.languageCode,
+      mimeType: entry.mimeType,
+      audioSeconds: entry.audioSeconds,
+      audioBytes: entry.audioBytes,
+      totalMs: entry.totalMs,
+      ok: entry.ok,
+      error: entry.error,
+    });
+  } catch {
+    logger.warn(
+      {
+        kind: 'stt',
+        provider: entry.provider,
+        totalMs: entry.totalMs,
+        ok: entry.ok,
+      },
+      'Failed to persist speech log',
+    );
+  }
+}
+
+function normalizeMimeType(mimeType: string): string {
+  return mimeType.trim().toLowerCase();
+}
+
+function isSupportedSttMimeType(mimeType: string): boolean {
+  return sarvamRestSttMimeTypes.includes(
+    normalizeMimeType(mimeType) as (typeof sarvamRestSttMimeTypes)[number],
+  );
+}
+
+async function readAudioDurationSeconds(audio: Buffer, mimeType: string): Promise<number> {
+  try {
+    const metadata = await parseBuffer(audio, {
+      mimeType,
+      size: audio.length,
+    });
+
+    const durationSeconds = metadata.format.duration;
+
+    if (!durationSeconds || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      throw new ApiError(400, 'Unable to determine audio duration');
+    }
+
+    return durationSeconds;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(400, 'Unable to determine audio duration');
   }
 }
 
@@ -107,7 +207,7 @@ export async function synthesizeSpeech(
 
     const totalMs = Date.now() - startedAt;
 
-    await writeSpeechLog({
+    await writeTtsSpeechLog({
       provider: providerName,
       voice: input.voice,
       pace: input.pace,
@@ -125,7 +225,6 @@ export async function synthesizeSpeech(
         provider: providerName,
         totalMs,
         durationMs: output.durationMs ?? null,
-        chars,
       },
       'Speech provider call completed',
     );
@@ -142,9 +241,9 @@ export async function synthesizeSpeech(
     };
   } catch (error) {
     const totalMs = Date.now() - startedAt;
-    const apiError = toApiError(error);
+    const apiError = toTtsApiError(error);
 
-    await writeSpeechLog({
+    await writeTtsSpeechLog({
       provider: providerName,
       voice: input.voice,
       pace: input.pace,
@@ -162,7 +261,6 @@ export async function synthesizeSpeech(
         provider: providerName,
         totalMs,
         durationMs: null,
-        chars,
         statusCode: apiError.statusCode,
       },
       'Speech provider call failed',
@@ -187,4 +285,98 @@ export async function synthesizeSpeechToStoredAudio(
     totalMs: result.totalMs,
     durationMs: result.durationMs,
   };
+}
+
+export async function transcribeSpeech(
+  input: TranscribeSpeechInput,
+): Promise<TranscribeSpeechResult> {
+  if (input.audio.length === 0) {
+    throw new ApiError(400, 'audio file is required');
+  }
+
+  const normalizedMimeType = normalizeMimeType(input.mimeType);
+
+  if (!isSupportedSttMimeType(normalizedMimeType)) {
+    throw new ApiError(400, 'Unsupported audio format for STT');
+  }
+
+  const durationSeconds = await readAudioDurationSeconds(input.audio, normalizedMimeType);
+
+  if (durationSeconds > env.STT_MAX_DURATION_SECONDS) {
+    throw new ApiError(
+      400,
+      `Sarvam STT REST supports up to ${env.STT_MAX_DURATION_SECONDS} seconds per request`,
+    );
+  }
+
+  const providerName = resolveSttProviderName(input.provider);
+  const provider = getSttProvider(providerName);
+  const startedAt = Date.now();
+  const languageCode = input.languageCode ?? 'unknown';
+
+  try {
+    const output = await provider.transcribe({
+      audio: input.audio,
+      mimeType: normalizedMimeType,
+      languageCode,
+    });
+
+    const totalMs = Date.now() - startedAt;
+    const resolvedDurationSeconds = output.durationSeconds ?? durationSeconds;
+
+    await writeSttSpeechLog({
+      provider: providerName,
+      languageCode,
+      mimeType: normalizedMimeType,
+      audioSeconds: resolvedDurationSeconds,
+      audioBytes: input.audio.length,
+      totalMs,
+      ok: true,
+    });
+
+    logger.info(
+      {
+        kind: 'stt',
+        provider: providerName,
+        totalMs,
+        durationSeconds: resolvedDurationSeconds,
+      },
+      'Speech provider call completed',
+    );
+
+    return {
+      text: output.text,
+      languageCode: output.languageCode,
+      provider: providerName,
+      totalMs,
+      durationSeconds: resolvedDurationSeconds,
+    };
+  } catch (error) {
+    const totalMs = Date.now() - startedAt;
+    const apiError = toSttApiError(error);
+
+    await writeSttSpeechLog({
+      provider: providerName,
+      languageCode,
+      mimeType: normalizedMimeType,
+      audioSeconds: durationSeconds,
+      audioBytes: input.audio.length,
+      totalMs,
+      ok: false,
+      error: toShortErrorMessage(apiError.message),
+    });
+
+    logger.warn(
+      {
+        kind: 'stt',
+        provider: providerName,
+        totalMs,
+        durationSeconds,
+        statusCode: apiError.statusCode,
+      },
+      'Speech provider call failed',
+    );
+
+    throw apiError;
+  }
 }

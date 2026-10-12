@@ -1,6 +1,11 @@
 import type { RequestHandler } from 'express';
-import { synthesizeSpeechToStoredAudio } from '../services/speechService.js';
-import type { SpeechTtsInput } from '../validators/speechValidator.js';
+import { ApiError } from '../utils/ApiError.js';
+import {
+  synthesizeSpeechToStoredAudio,
+  transcribeSpeech,
+  type TranscribeSpeechInput,
+} from '../services/speechService.js';
+import type { SpeechSttInput, SpeechTtsInput } from '../validators/speechValidator.js';
 
 export const synthesizeTts: RequestHandler = async (_req, res) => {
   const { body } = res.locals.validated as { body: SpeechTtsInput };
@@ -14,5 +19,30 @@ export const synthesizeTts: RequestHandler = async (_req, res) => {
     chars: result.chars,
     totalMs: result.totalMs,
     durationMs: result.durationMs,
+  });
+};
+
+export const transcribeStt: RequestHandler = async (req, res) => {
+  const { body } = res.locals.validated as { body: SpeechSttInput };
+
+  if (!req.file) {
+    throw new ApiError(400, 'audio file is required');
+  }
+
+  const input: TranscribeSpeechInput = {
+    audio: req.file.buffer,
+    mimeType: req.file.mimetype,
+    languageCode: body.language,
+    provider: body.provider,
+  };
+
+  const result = await transcribeSpeech(input);
+
+  res.status(200).json({
+    text: result.text,
+    languageCode: result.languageCode,
+    provider: result.provider,
+    totalMs: result.totalMs,
+    durationSeconds: result.durationSeconds,
   });
 };

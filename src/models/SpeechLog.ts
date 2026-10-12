@@ -4,7 +4,7 @@ const speechLogSchema = new Schema(
   {
     kind: {
       type: String,
-      enum: ['tts'],
+      enum: ['tts', 'stt'],
       required: true,
     },
     provider: {
@@ -21,13 +21,20 @@ const speechLogSchema = new Schema(
     },
     language: {
       type: String,
-      enum: ['en-IN', 'hi-IN', 'ta-IN', 'te-IN'],
       required: true,
+      trim: true,
     },
     chars: {
       type: Number,
-      required: true,
       min: 0,
+    },
+    audioSeconds: {
+      type: Number,
+      min: 0,
+    },
+    mimeType: {
+      type: String,
+      trim: true,
     },
     audioBytes: {
       type: Number,

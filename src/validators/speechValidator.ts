@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sttLanguageCodes, sttProviderNames } from '../providers/stt/index.js';
 import { ttsLanguages, ttsProviderNames } from '../providers/tts/index.js';
 
 export const speechTtsRequestSchema = z.object({
@@ -11,4 +12,12 @@ export const speechTtsRequestSchema = z.object({
   }),
 });
 
+export const speechSttRequestSchema = z.object({
+  body: z.object({
+    language: z.enum(sttLanguageCodes).optional(),
+    provider: z.enum(sttProviderNames).optional(),
+  }),
+});
+
 export type SpeechTtsInput = z.infer<typeof speechTtsRequestSchema>['body'];
+export type SpeechSttInput = z.infer<typeof speechSttRequestSchema>['body'];
