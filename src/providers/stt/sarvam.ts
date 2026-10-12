@@ -68,6 +68,16 @@ function guessExtension(mimeType: string): string {
   return 'audio';
 }
 
+const RAW_PCM_CODEC_MAP: Record<string, string> = {
+  'audio/pcm_s16le': 'pcm_s16le',
+  'audio/pcm_l16': 'pcm_l16',
+  'audio/pcm_raw': 'pcm_raw',
+};
+
+function getRawPcmCodec(mimeType: string): string | undefined {
+  return RAW_PCM_CODEC_MAP[mimeType];
+}
+
 function mapSarvamSttErrorStatus(status: number): ApiError {
   if (status === 429) {
     return new ApiError(429, 'STT provider rate limit exceeded');
@@ -107,6 +117,12 @@ export const sarvamSttProvider: SttProvider = {
     form.append('model', SARVAM_STT_MODEL);
     form.append('mode', SARVAM_STT_MODE);
     form.append('language_code', input.languageCode ?? 'unknown');
+
+    const pcmCodec = getRawPcmCodec(input.mimeType);
+
+    if (pcmCodec) {
+      form.append('input_audio_codec', pcmCodec);
+    }
 
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => {

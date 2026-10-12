@@ -166,7 +166,25 @@ function isSupportedSttMimeType(mimeType: string): boolean {
   );
 }
 
+const RAW_PCM_MIME_TYPES = new Set(['audio/pcm_s16le', 'audio/pcm_l16', 'audio/pcm_raw']);
+
+/** Sarvam requires raw PCM at 16 kHz, mono, 16-bit (signed LE). */
+const PCM_SAMPLE_RATE = 16_000;
+const PCM_CHANNELS = 1;
+const PCM_BYTES_PER_SAMPLE = 2;
+
 async function readAudioDurationSeconds(audio: Buffer, mimeType: string): Promise<number> {
+  if (RAW_PCM_MIME_TYPES.has(mimeType)) {
+    const bytesPerSecond = PCM_SAMPLE_RATE * PCM_CHANNELS * PCM_BYTES_PER_SAMPLE;
+    const durationSeconds = audio.length / bytesPerSecond;
+
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      throw new ApiError(400, 'Unable to determine audio duration');
+    }
+
+    return durationSeconds;
+  }
+
   try {
     const metadata = await parseBuffer(audio, {
       mimeType,
