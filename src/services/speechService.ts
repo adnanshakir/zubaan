@@ -119,6 +119,17 @@ export async function synthesizeSpeech(
       ok: true,
     });
 
+    logger.info(
+      {
+        kind: 'tts',
+        provider: providerName,
+        totalMs,
+        durationMs: output.durationMs ?? null,
+        chars,
+      },
+      'Speech provider call completed',
+    );
+
     return {
       audio: output.audio,
       format: output.format,
@@ -144,6 +155,18 @@ export async function synthesizeSpeech(
       ok: false,
       error: toShortErrorMessage(apiError.message),
     });
+
+    logger.warn(
+      {
+        kind: 'tts',
+        provider: providerName,
+        totalMs,
+        durationMs: null,
+        chars,
+        statusCode: apiError.statusCode,
+      },
+      'Speech provider call failed',
+    );
 
     throw apiError;
   }

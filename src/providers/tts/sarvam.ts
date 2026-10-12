@@ -17,6 +17,10 @@ const SARVAM_LANGUAGE_MAP: Record<TtsLanguage, string> = {
   'te-IN': 'te-IN',
 };
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
 function isSarvamTtsSuccessResponse(value: unknown): value is SarvamTtsSuccessResponse {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -29,6 +33,26 @@ function isSarvamTtsSuccessResponse(value: unknown): value is SarvamTtsSuccessRe
   return value.audios.every((audio) => typeof audio === 'string' && audio.length > 0);
 }
 
+function mapSarvamTtsErrorStatus(status: number): ApiError {
+  if (status === 429) {
+    return new ApiError(429, 'TTS provider rate limit exceeded');
+  }
+
+  if (status === 401 || status === 403) {
+    return new ApiError(502, 'TTS provider authentication failed');
+  }
+
+  if (status >= 400 && status < 500) {
+    return new ApiError(400, 'TTS provider rejected the request');
+  }
+
+  if (status >= 500) {
+    return new ApiError(502, 'TTS provider request failed');
+  }
+
+  return new ApiError(502, 'TTS provider request failed');
+}
+
 export const sarvamTtsProvider: TtsProvider = {
   async synthesize(input) {
     if (!env.SARVAM_API_KEY) {
@@ -39,54 +63,66 @@ export const sarvamTtsProvider: TtsProvider = {
       throw new ApiError(400, 'Sarvam Bulbul v3 supports up to 2500 characters per request');
     }
 
-    const response = await fetch(SARVAM_TTS_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-subscription-key': env.SARVAM_API_KEY,
-      },
-      body: JSON.stringify({
-        text: input.text,
-        language_code: SARVAM_LANGUAGE_MAP[input.language],
-        speaker: input.voice,
-        pace: input.pace,
-        model: SARVAM_MODEL,
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        throw new ApiError(429, 'TTS provider rate limit exceeded');
-      }
-
-      if (response.status === 401 || response.status === 403) {
-        throw new ApiError(502, 'TTS provider authentication failed');
-      }
-
-      throw new ApiError(502, 'TTS provider request failed');
-    }
-
-    let payload: unknown;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => {
+      controller.abort();
+    }, env.SARVAM_TTS_TIMEOUT_MS);
 
     try {
-      payload = (await response.json()) as unknown;
-    } catch {
+      const response = await fetch(SARVAM_TTS_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-subscription-key': env.SARVAM_API_KEY,
+        },
+        body: JSON.stringify({
+          text: input.text,
+          language_code: SARVAM_LANGUAGE_MAP[input.language],
+          speaker: input.voice,
+          pace: input.pace,
+          model: SARVAM_MODEL,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw mapSarvamTtsErrorStatus(response.status);
+      }
+
+      let payload: unknown;
+
+      try {
+        payload = (await response.json()) as unknown;
+      } catch {
+        throw new ApiError(502, 'TTS provider request failed');
+      }
+
+      if (!isSarvamTtsSuccessResponse(payload)) {
+        throw new ApiError(502, 'TTS provider request failed');
+      }
+
+      const audio = Buffer.from(payload.audios.join(''), 'base64');
+
+      if (audio.length === 0) {
+        throw new ApiError(502, 'TTS provider request failed');
+      }
+
+      return {
+        audio,
+        format: 'wav',
+      };
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      if (isAbortError(error)) {
+        throw new ApiError(504, 'TTS provider timed out');
+      }
+
       throw new ApiError(502, 'TTS provider request failed');
+    } finally {
+      clearTimeout(timeoutHandle);
     }
-
-    if (!isSarvamTtsSuccessResponse(payload)) {
-      throw new ApiError(502, 'TTS provider request failed');
-    }
-
-    const audio = Buffer.from(payload.audios.join(''), 'base64');
-
-    if (audio.length === 0) {
-      throw new ApiError(502, 'TTS provider request failed');
-    }
-
-    return {
-      audio,
-      format: 'wav',
-    };
   },
 };

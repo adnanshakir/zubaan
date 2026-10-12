@@ -28,6 +28,7 @@ const envSchema = z
       .refine((v) => v === undefined || (Number.isFinite(v) && v >= 0.5 && v <= 2), {
         message: 'Must be a number between 0.5 and 2',
       }),
+    SARVAM_TTS_TIMEOUT_MS: z.coerce.number().int().min(1000).default(15000),
     KOKORO_TTS_URL: z.string().trim().url().default('https://tts-system.vercel.app/api/tts'),
     KOKORO_TIMEOUT_MS: z.coerce.number().int().min(1000).default(90000),
   })
