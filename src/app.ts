@@ -3,6 +3,7 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { conversationRouter } from './routes/conversationRoutes.js';
 import { homeRouter } from './routes/homeRoutes.js';
 import { lessonRouter } from './routes/lessonRoutes.js';
 import { onboardingRouter } from './routes/onboardingRoutes.js';
@@ -29,6 +30,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/onboarding', onboardingRouter);
 app.use('/api/lessons', lessonRouter);
+app.use('/api/conversations', conversationRouter);
 app.use('/api/home', homeRouter);
 
 app.use(errorHandler);

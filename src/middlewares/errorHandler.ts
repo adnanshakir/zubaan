@@ -17,7 +17,7 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
     return;
   }
 
-  logger.error('Unexpected error', error);
+  logger.error({ err: error }, 'Unexpected error');
 
   res.status(500).json({
     error: {

@@ -2,3 +2,5 @@ node_modules
 dist
 coverage
 .env
+AGENT.md
+zubaan.postman_collection.json

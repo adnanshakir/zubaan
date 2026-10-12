@@ -10,16 +10,6 @@ import {
 
 export const lessonRouter = Router();
 
-lessonRouter.get(
-  '/',
-  attachUser,
-  validate(lessonListRequestSchema),
-  asyncHandler(getLessons),
-);
+lessonRouter.get('/', attachUser, validate(lessonListRequestSchema), asyncHandler(getLessons));
 
-lessonRouter.get(
-  '/:id',
-  attachUser,
-  validate(lessonDetailRequestSchema),
-  asyncHandler(getLesson),
-);
+lessonRouter.get('/:id', attachUser, validate(lessonDetailRequestSchema), asyncHandler(getLesson));

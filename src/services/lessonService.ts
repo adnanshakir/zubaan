@@ -45,9 +45,7 @@ export function toLessonListItem(lesson: {
   };
 }
 
-export async function listLessons(
-  filters: LessonFilters,
-): Promise<LessonListItem[]> {
+export async function listLessons(filters: LessonFilters): Promise<LessonListItem[]> {
   const lessons = await Lesson.find(filters)
     .select('slug title category level objective estimatedMinutes')
     .lean();
@@ -75,12 +73,8 @@ export async function getRecommended(
   if (categoryLessons.length > 0) {
     const targetLevelIndex = levels.indexOf(userLevel);
     const nearestLesson = categoryLessons.reduce((closest, lesson) => {
-      const closestDistance = Math.abs(
-        levels.indexOf(closest.level as Level) - targetLevelIndex,
-      );
-      const lessonDistance = Math.abs(
-        levels.indexOf(lesson.level as Level) - targetLevelIndex,
-      );
+      const closestDistance = Math.abs(levels.indexOf(closest.level as Level) - targetLevelIndex);
+      const lessonDistance = Math.abs(levels.indexOf(lesson.level as Level) - targetLevelIndex);
 
       return lessonDistance < closestDistance ? lesson : closest;
     });

@@ -6,8 +6,4 @@ import { onboardingRequestSchema } from '../validators/onboardingValidator.js';
 
 export const onboardingRouter = Router();
 
-onboardingRouter.post(
-  '/',
-  validate(onboardingRequestSchema),
-  asyncHandler(createOnboarding),
-);
+onboardingRouter.post('/', validate(onboardingRequestSchema), asyncHandler(createOnboarding));
