@@ -346,6 +346,7 @@ Core endpoints:
 - Secrets only in `.env`. `.env.example` stays up to date.
 - Index fields you query (`userId`, `nextReviewAt`, `slug`).
 - Do not refactor unrelated code. Do not rewrite working files for style.
+- Any change to an endpoint, request/response shape, validation rule, or environment variable **must** update `docs/API_REFERENCE.md` in the same commit.
 
 ---
 
