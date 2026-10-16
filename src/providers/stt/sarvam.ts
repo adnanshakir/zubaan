@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { env } from '../../config/env.js';
+import { env, getSttDurationLimitMessage } from '../../config/env.js';
 import { ApiError } from '../../utils/ApiError.js';
-import type { SttProvider } from './index.js';
+import type { SttProvider, SttSupportedMimeType } from './index.js';
 
 const SARVAM_STT_URL = 'https://api.sarvam.ai/speech-to-text';
 const SARVAM_STT_MODEL = 'saaras:v3';
@@ -16,65 +16,40 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
-function guessExtension(mimeType: string): string {
-  if (mimeType === 'audio/wav' || mimeType === 'audio/x-wav' || mimeType === 'audio/wave') {
-    return 'wav';
-  }
+const fileExtensions: Record<SttSupportedMimeType, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/mpeg3': 'mp3',
+  'audio/x-mpeg-3': 'mp3',
+  'audio/x-mp3': 'mp3',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/aac': 'aac',
+  'audio/x-aac': 'aac',
+  'audio/aiff': 'aiff',
+  'audio/x-aiff': 'aiff',
+  'audio/ogg': 'ogg',
+  'audio/opus': 'opus',
+  'audio/flac': 'flac',
+  'audio/x-flac': 'flac',
+  'audio/mp4': 'mp4',
+  'audio/x-m4a': 'm4a',
+  'audio/amr': 'amr',
+  'audio/x-ms-wma': 'wma',
+  'audio/webm': 'webm',
+  'audio/pcm_s16le': 'pcm',
+  'audio/pcm_l16': 'pcm',
+  'audio/pcm_raw': 'pcm',
+};
 
-  if (mimeType === 'audio/mpeg' || mimeType === 'audio/mp3' || mimeType === 'audio/x-mp3') {
-    return 'mp3';
-  }
-
-  if (mimeType === 'audio/mp4' || mimeType === 'audio/x-m4a') {
-    return 'm4a';
-  }
-
-  if (mimeType === 'audio/webm') {
-    return 'webm';
-  }
-
-  if (mimeType === 'audio/flac' || mimeType === 'audio/x-flac') {
-    return 'flac';
-  }
-
-  if (mimeType === 'audio/ogg' || mimeType === 'audio/opus') {
-    return 'ogg';
-  }
-
-  if (mimeType === 'audio/aac' || mimeType === 'audio/x-aac') {
-    return 'aac';
-  }
-
-  if (mimeType === 'audio/aiff' || mimeType === 'audio/x-aiff') {
-    return 'aiff';
-  }
-
-  if (mimeType === 'audio/amr') {
-    return 'amr';
-  }
-
-  if (mimeType === 'audio/x-ms-wma') {
-    return 'wma';
-  }
-
-  if (
-    mimeType === 'audio/pcm_s16le' ||
-    mimeType === 'audio/pcm_l16' ||
-    mimeType === 'audio/pcm_raw'
-  ) {
-    return 'pcm';
-  }
-
-  return 'audio';
-}
-
-const RAW_PCM_CODEC_MAP: Record<string, string> = {
+const RAW_PCM_CODEC_MAP: Partial<Record<SttSupportedMimeType, string>> = {
   'audio/pcm_s16le': 'pcm_s16le',
   'audio/pcm_l16': 'pcm_l16',
   'audio/pcm_raw': 'pcm_raw',
 };
 
-function getRawPcmCodec(mimeType: string): string | undefined {
+function getRawPcmCodec(mimeType: SttSupportedMimeType): string | undefined {
   return RAW_PCM_CODEC_MAP[mimeType];
 }
 
@@ -88,7 +63,7 @@ function mapSarvamSttErrorStatus(status: number): ApiError {
   }
 
   if (status === 422) {
-    return new ApiError(400, 'STT provider rejected audio input');
+    return new ApiError(400, getSttDurationLimitMessage());
   }
 
   if (status >= 400 && status < 500) {
@@ -112,7 +87,7 @@ export const sarvamSttProvider: SttProvider = {
     form.append(
       'file',
       new Blob([new Uint8Array(input.audio)], { type: input.mimeType }),
-      `audio.${guessExtension(input.mimeType)}`,
+      `audio.${fileExtensions[input.mimeType]}`,
     );
     form.append('model', SARVAM_STT_MODEL);
     form.append('mode', SARVAM_STT_MODE);

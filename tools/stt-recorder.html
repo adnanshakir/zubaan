@@ -1,0 +1,167 @@
+<!-- Open this file through a local static server, then enter a valid local x-user-id. -->
+<!-- Recordings stop automatically after 25 seconds and are posted only to the backend URL below. -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>STT MediaRecorder Test</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+        background: #111827;
+        color: #f9fafb;
+      }
+      body {
+        margin: 0;
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+      }
+      main {
+        width: min(42rem, calc(100% - 2rem));
+        padding: 2rem;
+        background: #1f2937;
+        border-radius: 0.75rem;
+      }
+      label {
+        display: grid;
+        gap: 0.35rem;
+        margin: 1rem 0;
+      }
+      input,
+      button,
+      pre {
+        border: 1px solid #4b5563;
+        border-radius: 0.4rem;
+        font: inherit;
+      }
+      input {
+        padding: 0.65rem;
+        background: #111827;
+        color: inherit;
+      }
+      button {
+        padding: 0.7rem 1rem;
+        background: #2563eb;
+        color: #fff;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: wait;
+        opacity: 0.6;
+      }
+      pre {
+        min-height: 5rem;
+        padding: 1rem;
+        overflow: auto;
+        background: #111827;
+        white-space: pre-wrap;
+      }
+      .meta {
+        color: #cbd5e1;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>STT MediaRecorder Test</h1>
+      <label
+        >Backend URL <input id="backend-url" value="http://localhost:5000/api/speech/stt"
+      /></label>
+      <label>x-user-id <input id="user-id" placeholder="MongoDB user ObjectId" /></label>
+      <button id="record-button" type="button">Record</button>
+      <p id="recording-meta" class="meta">No recording yet.</p>
+      <pre id="result" aria-live="polite">Ready.</pre>
+    </main>
+    <script>
+      const MAX_RECORDING_MS = 25_000;
+      const PREFERRED_MIME_TYPE = 'audio/webm;codecs=opus';
+      const recordButton = document.querySelector('#record-button');
+      const recordingMeta = document.querySelector('#recording-meta');
+      const result = document.querySelector('#result');
+      const backendUrl = document.querySelector('#backend-url');
+      const userId = document.querySelector('#user-id');
+      let recorder;
+      let stream;
+      let stopTimer;
+
+      function setResult(value) {
+        result.textContent = value;
+      }
+
+      function fileExtension(mimeType) {
+        const subtype = mimeType.split(';', 1)[0].split('/')[1];
+        return subtype === 'webm' || subtype === 'ogg' || subtype === 'wav' ? subtype : 'audio';
+      }
+
+      function releaseStream() {
+        stream?.getTracks().forEach((track) => track.stop());
+        stream = undefined;
+      }
+
+      async function upload(blob) {
+        const form = new FormData();
+        form.append('audio', blob, `recording.${fileExtension(blob.type)}`);
+        const response = await fetch(backendUrl.value.trim(), {
+          method: 'POST',
+          headers: { 'x-user-id': userId.value.trim() },
+          body: form,
+        });
+        const contentType = response.headers.get('content-type') ?? '';
+        const payload = contentType.includes('application/json')
+          ? await response.json()
+          : await response.text();
+        setResult(`${response.status} ${response.statusText}\n${JSON.stringify(payload, null, 2)}`);
+      }
+
+      async function startRecording() {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const options = MediaRecorder.isTypeSupported(PREFERRED_MIME_TYPE)
+          ? { mimeType: PREFERRED_MIME_TYPE }
+          : undefined;
+        recorder = new MediaRecorder(stream, options);
+        const chunks = [];
+        recorder.addEventListener('dataavailable', (event) => chunks.push(event.data));
+        recorder.addEventListener('stop', async () => {
+          clearTimeout(stopTimer);
+          const blob = new Blob(chunks, { type: recorder.mimeType });
+          recordingMeta.textContent = `Blob MIME: ${blob.type || '(empty)'}; size: ${blob.size} bytes`;
+          recordButton.textContent = 'Record';
+          recordButton.disabled = false;
+          releaseStream();
+          try {
+            await upload(blob);
+          } catch (error) {
+            setResult(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        });
+        recorder.start();
+        recordButton.textContent = 'Stop';
+        recordingMeta.textContent = `Recording with ${recorder.mimeType || 'browser default'}...`;
+        stopTimer = setTimeout(
+          () => recorder?.state === 'recording' && recorder.stop(),
+          MAX_RECORDING_MS,
+        );
+      }
+
+      recordButton.addEventListener('click', async () => {
+        if (recorder?.state === 'recording') {
+          recordButton.disabled = true;
+          recorder.stop();
+          return;
+        }
+        recordButton.disabled = true;
+        setResult('Requesting microphone access...');
+        try {
+          await startRecording();
+        } catch (error) {
+          releaseStream();
+          setResult(`Recording failed: ${error instanceof Error ? error.message : String(error)}`);
+          recordButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
