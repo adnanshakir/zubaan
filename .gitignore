@@ -7,3 +7,4 @@ coverage/
 .DS_Store
 *.log
 storage/audio/
+docs/API_REFERENCE.md
