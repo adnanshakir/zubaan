@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-16
+> **Last verified against code**: 2026-10-20
 
 ---
 
@@ -1536,16 +1536,25 @@ the HTTP client when using `FormData`).
 
 ### 8.3 Audio Recording Requirements
 
-The client (e.g., Flutter or web recorder) should produce:
-- **Format**: 16 kHz mono WAV (preferred; verified in Sarvam's REST documentation)
-- **MIME type**: Set correctly in the multipart upload (e.g., `audio/wav`). Parameters such as `audio/webm; codecs=opus` are normalized by this API.
-- **Duration**: Under 30 seconds
-- **Size**: Under 10 MB
+**Browser clients must send 16 kHz mono WAV** until WebM/Opus support is
+confirmed with Sarvam. Sarvam's REST documentation lists WAV, MP3, AAC, FLAC
+and OGG as accepted formats — WebM is not mentioned.
 
-The backend accepts browser WebM uploads and forwards a normalized `audio/webm`
-part named `audio.webm`. **Sarvam acceptance of WebM/Opus is UNVERIFIED**:
-its REST documentation currently lists only WAV, MP3, AAC, FLAC, and OGG.
-Use WAV for a provider-verified browser integration until Sarvam confirms WebM.
+The backend does accept browser WebM uploads and forwards a normalized
+`audio/webm` part named `audio.webm`, but Sarvam may reject it. WAV is the
+only format verified end-to-end.
+
+Recording checklist:
+- **Format**: 16 kHz mono WAV (PCM 16-bit). Required for browser clients.
+- **Encoding**: Use `MediaRecorder` → `AudioContext.decodeAudioData` →
+  `OfflineAudioContext` (resample to 16 kHz mono) → 44-byte RIFF header.
+  A tested, dependency-free encoder is in `tools/stt-recorder.html`
+  (`decodeToMono16k`, `floatTo16BitPCM`, `encodeWav`) — copy these functions
+  into the Next.js frontend as-is.
+- **MIME type**: Set to `audio/wav` in the multipart upload.
+- **Duration**: Under 30 seconds.
+- **Size**: Under 10 MB.
+- **Flutter**: Record 16 kHz mono WAV natively (no browser encoding needed).
 
 ### 8.4 Audio Playback
 

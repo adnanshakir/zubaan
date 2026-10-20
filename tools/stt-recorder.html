@@ -31,13 +31,15 @@
         margin: 1rem 0;
       }
       input,
+      select,
       button,
       pre {
         border: 1px solid #4b5563;
         border-radius: 0.4rem;
         font: inherit;
       }
-      input {
+      input,
+      select {
         padding: 0.65rem;
         background: #111827;
         color: inherit;
@@ -71,44 +73,263 @@
         >Backend URL <input id="backend-url" value="http://localhost:5000/api/speech/stt"
       /></label>
       <label>x-user-id <input id="user-id" placeholder="MongoDB user ObjectId" /></label>
+      <label
+        >Format
+        <select id="format-select">
+          <option value="wav" selected>WAV 16 kHz mono (recommended)</option>
+          <option value="raw">Raw browser format</option>
+        </select>
+      </label>
       <button id="record-button" type="button">Record</button>
       <p id="recording-meta" class="meta">No recording yet.</p>
       <pre id="result" aria-live="polite">Ready.</pre>
     </main>
     <script>
-      const MAX_RECORDING_MS = 25_000;
-      const PREFERRED_MIME_TYPE = 'audio/webm;codecs=opus';
-      const recordButton = document.querySelector('#record-button');
-      const recordingMeta = document.querySelector('#recording-meta');
-      const result = document.querySelector('#result');
-      const backendUrl = document.querySelector('#backend-url');
-      const userId = document.querySelector('#user-id');
-      let recorder;
-      let stream;
-      let stopTimer;
+      /* ────────────────────────────────────────────────────────
+       *  Constants — no magic numbers
+       * ──────────────────────────────────────────────────────── */
 
-      function setResult(value) {
-        result.textContent = value;
+      const TARGET_SAMPLE_RATE = 16000;
+      const MAX_RECORD_SECONDS = 25;
+      const MAX_RECORD_MS = MAX_RECORD_SECONDS * 1000;
+      const PREFERRED_MIME_TYPE = 'audio/webm;codecs=opus';
+      const BITS_PER_SAMPLE = 16;
+      const WAV_HEADER_BYTES = 44;
+      const BYTES_PER_KB = 1024;
+
+      /* ────────────────────────────────────────────────────────
+       *  WAV encoder — pure functions, copy-friendly for Next.js
+       *
+       *  Usage:
+       *    const wavBlob = await decodeToMono16k(webmBlob);
+       *
+       *  Each function is self-contained so it can be extracted
+       *  into a utility module without changes.
+       * ──────────────────────────────────────────────────────── */
+
+      /**
+       * Decode an audio Blob to 16 kHz mono Float32 samples.
+       *
+       * Why: MediaRecorder outputs webm/opus (48 kHz stereo) which
+       *      Sarvam may not accept. Resampling to 16 kHz mono PCM
+       *      WAV is the documented safe format.
+       *
+       * @param {Blob} blob - Any browser-decodable audio Blob
+       * @returns {Promise<{samples: Float32Array, duration: number}>}
+       *          samples clamped to [-1, 1], duration in seconds
+       */
+      async function decodeToMono16k(blob) {
+        const arrayBuffer = await blob.arrayBuffer();
+
+        // Decode the compressed audio into raw PCM at its native rate.
+        // We use a one-shot AudioContext only for decoding, then close it.
+        const tempCtx = new AudioContext();
+        /** @type {AudioBuffer} */
+        let decoded;
+        try {
+          decoded = await tempCtx.decodeAudioData(arrayBuffer);
+        } finally {
+          await tempCtx.close();
+        }
+
+        // Resample to TARGET_SAMPLE_RATE and down-mix to mono.
+        // OfflineAudioContext renders audio without real-time playback.
+        const lengthAtTarget = Math.ceil(decoded.duration * TARGET_SAMPLE_RATE);
+        const offline = new OfflineAudioContext(1, lengthAtTarget, TARGET_SAMPLE_RATE);
+        const source = offline.createBufferSource();
+        source.buffer = decoded;
+        source.connect(offline.destination);
+        source.start(0);
+
+        const rendered = await offline.startRendering();
+        return {
+          samples: rendered.getChannelData(0),
+          duration: rendered.duration,
+        };
       }
 
+      /**
+       * Convert Float32 PCM samples to 16-bit signed integers.
+       *
+       * Why: WAV PCM 16-bit is the standard interchange format.
+       *      Clamping first avoids integer overflow on hot signals.
+       *
+       * @param {Float32Array} float32 - Samples in [-1, 1]
+       * @returns {Int16Array}
+       */
+      function floatTo16BitPCM(float32) {
+        const int16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+          // Clamp to [-1, 1] then scale to Int16 range.
+          const clamped = Math.max(-1, Math.min(1, float32[i]));
+          int16[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+        }
+        return int16;
+      }
+
+      /**
+       * Build a complete WAV file (RIFF header + PCM data) from Float32 samples.
+       *
+       * Why: A standard 44-byte RIFF/WAVE header lets any decoder
+       *      (including Sarvam's backend) parse the file without probing.
+       *
+       * @param {Float32Array} samples - Mono samples in [-1, 1]
+       * @param {number} sampleRate    - e.g. 16000
+       * @returns {Blob} Complete WAV file as a Blob with type "audio/wav"
+       */
+      function encodeWav(samples, sampleRate) {
+        const pcm = floatTo16BitPCM(samples);
+        const numChannels = 1;
+        const byteRate = sampleRate * numChannels * (BITS_PER_SAMPLE / 8);
+        const blockAlign = numChannels * (BITS_PER_SAMPLE / 8);
+        const dataBytes = pcm.length * (BITS_PER_SAMPLE / 8);
+        const buffer = new ArrayBuffer(WAV_HEADER_BYTES + dataBytes);
+        const view = new DataView(buffer);
+
+        // ── RIFF header ──
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + dataBytes, true); // file size - 8
+        writeString(view, 8, 'WAVE');
+
+        // ── fmt sub-chunk ──
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true); // sub-chunk size (PCM = 16)
+        view.setUint16(20, 1, true); // audio format (1 = PCM)
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, byteRate, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, BITS_PER_SAMPLE, true);
+
+        // ── data sub-chunk ──
+        writeString(view, 36, 'data');
+        view.setUint32(40, dataBytes, true);
+
+        // Copy PCM samples into the buffer after the header.
+        const int16View = new Int16Array(buffer, WAV_HEADER_BYTES);
+        int16View.set(pcm);
+
+        return new Blob([buffer], { type: 'audio/wav' });
+      }
+
+      /**
+       * Write an ASCII string into a DataView at the given offset.
+       * @param {DataView} view
+       * @param {number} offset
+       * @param {string} str
+       */
+      function writeString(view, offset, str) {
+        for (let i = 0; i < str.length; i++) {
+          view.setUint8(offset + i, str.charCodeAt(i));
+        }
+      }
+
+      /* ── End WAV encoder block ─────────────────────────────── */
+
+      /* ────────────────────────────────────────────────────────
+       *  DOM references
+       * ──────────────────────────────────────────────────────── */
+
+      const dom = {
+        backendUrl: /** @type {HTMLInputElement} */ (document.querySelector('#backend-url')),
+        userId: /** @type {HTMLInputElement} */ (document.querySelector('#user-id')),
+        formatSelect: /** @type {HTMLSelectElement} */ (document.querySelector('#format-select')),
+        recordButton: /** @type {HTMLButtonElement} */ (document.querySelector('#record-button')),
+        recordingMeta: /** @type {HTMLParagraphElement} */ (
+          document.querySelector('#recording-meta')
+        ),
+        result: /** @type {HTMLPreElement} */ (document.querySelector('#result')),
+      };
+
+      /* ────────────────────────────────────────────────────────
+       *  Application state — single mutable object
+       * ──────────────────────────────────────────────────────── */
+
+      const state = {
+        /** @type {MediaRecorder | null} */
+        recorder: null,
+        /** @type {MediaStream | null} */
+        stream: null,
+        /** @type {ReturnType<typeof setTimeout> | null} */
+        stopTimer: null,
+      };
+
+      /* ────────────────────────────────────────────────────────
+       *  Helpers
+       * ──────────────────────────────────────────────────────── */
+
+      /** @param {string} value */
+      function setResult(value) {
+        dom.result.textContent = value;
+      }
+
+      /** @param {string} mimeType */
       function fileExtension(mimeType) {
         const subtype = mimeType.split(';', 1)[0].split('/')[1];
         return subtype === 'webm' || subtype === 'ogg' || subtype === 'wav' ? subtype : 'audio';
       }
 
+      /** Release the microphone and clear the stream reference. */
       function releaseStream() {
-        stream?.getTracks().forEach((track) => track.stop());
-        stream = undefined;
+        if (state.stream) {
+          state.stream.getTracks().forEach((track) => track.stop());
+          state.stream = null;
+        }
       }
 
-      async function upload(blob) {
+      /**
+       * Format a byte count as a human-readable KB string.
+       * @param {number} bytes
+       * @returns {string}
+       */
+      function formatKB(bytes) {
+        return (bytes / BYTES_PER_KB).toFixed(1);
+      }
+
+      /**
+       * Categorize a microphone-access error into a user-facing message.
+       * @param {unknown} error
+       * @returns {string}
+       */
+      function describeMicError(error) {
+        if (error instanceof DOMException) {
+          if (error.name === 'NotAllowedError') return 'Microphone permission denied.';
+          if (error.name === 'NotFoundError') return 'No microphone found on this device.';
+          if (error.name === 'NotReadableError')
+            return 'Microphone is in use by another application.';
+        }
+        return `Microphone access failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+
+      /* ────────────────────────────────────────────────────────
+       *  Upload
+       * ──────────────────────────────────────────────────────── */
+
+      /**
+       * @param {Blob} blob
+       * @param {string} filename
+       */
+      async function upload(blob, filename) {
+        const url = dom.backendUrl.value.trim();
+        const uid = dom.userId.value.trim();
         const form = new FormData();
-        form.append('audio', blob, `recording.${fileExtension(blob.type)}`);
-        const response = await fetch(backendUrl.value.trim(), {
-          method: 'POST',
-          headers: { 'x-user-id': userId.value.trim() },
-          body: form,
-        });
+        form.append('audio', blob, filename);
+
+        /** @type {Response} */
+        let response;
+        try {
+          response = await fetch(url, {
+            method: 'POST',
+            headers: { 'x-user-id': uid },
+            body: form,
+          });
+        } catch (/** @type {any} */ networkErr) {
+          setResult(
+            `Network error: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}`,
+          );
+          return;
+        }
+
         const contentType = response.headers.get('content-type') ?? '';
         const payload = contentType.includes('application/json')
           ? await response.json()
@@ -116,50 +337,123 @@
         setResult(`${response.status} ${response.statusText}\n${JSON.stringify(payload, null, 2)}`);
       }
 
+      /* ────────────────────────────────────────────────────────
+       *  Recording
+       * ──────────────────────────────────────────────────────── */
+
       async function startRecording() {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const options = MediaRecorder.isTypeSupported(PREFERRED_MIME_TYPE)
+        const selectedFormat = dom.formatSelect.value; // "wav" | "raw"
+
+        state.stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+
+        const mimeOptions = MediaRecorder.isTypeSupported(PREFERRED_MIME_TYPE)
           ? { mimeType: PREFERRED_MIME_TYPE }
           : undefined;
-        recorder = new MediaRecorder(stream, options);
+        state.recorder = new MediaRecorder(state.stream, mimeOptions);
+
+        /** @type {Blob[]} */
         const chunks = [];
-        recorder.addEventListener('dataavailable', (event) => chunks.push(event.data));
-        recorder.addEventListener('stop', async () => {
-          clearTimeout(stopTimer);
-          const blob = new Blob(chunks, { type: recorder.mimeType });
-          recordingMeta.textContent = `Blob MIME: ${blob.type || '(empty)'}; size: ${blob.size} bytes`;
-          recordButton.textContent = 'Record';
-          recordButton.disabled = false;
-          releaseStream();
-          try {
-            await upload(blob);
-          } catch (error) {
-            setResult(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
+        state.recorder.addEventListener('dataavailable', (event) => chunks.push(event.data));
+
+        state.recorder.addEventListener('stop', async () => {
+          if (state.stopTimer !== null) {
+            clearTimeout(state.stopTimer);
+            state.stopTimer = null;
           }
+
+          const rawBlob = new Blob(chunks, { type: state.recorder?.mimeType ?? '' });
+          releaseStream();
+
+          if (selectedFormat === 'wav') {
+            await handleWavFormat(rawBlob);
+          } else {
+            await handleRawFormat(rawBlob);
+          }
+
+          dom.recordButton.textContent = 'Record';
+          dom.recordButton.disabled = false;
         });
-        recorder.start();
-        recordButton.textContent = 'Stop';
-        recordingMeta.textContent = `Recording with ${recorder.mimeType || 'browser default'}...`;
-        stopTimer = setTimeout(
-          () => recorder?.state === 'recording' && recorder.stop(),
-          MAX_RECORDING_MS,
-        );
+
+        state.recorder.start();
+        dom.recordButton.textContent = 'Stop';
+        dom.recordingMeta.textContent =
+          `Recording (${selectedFormat === 'wav' ? 'will encode to WAV' : 'raw browser format'}) ` +
+          `with ${state.recorder.mimeType || 'browser default'}…`;
+
+        state.stopTimer = setTimeout(() => {
+          if (state.recorder?.state === 'recording') {
+            state.recorder.stop();
+          }
+        }, MAX_RECORD_MS);
       }
 
-      recordButton.addEventListener('click', async () => {
-        if (recorder?.state === 'recording') {
-          recordButton.disabled = true;
-          recorder.stop();
+      /**
+       * Decode the raw browser blob to 16 kHz mono WAV, show metadata, and upload.
+       * @param {Blob} rawBlob
+       */
+      async function handleWavFormat(rawBlob) {
+        setResult('Decoding and resampling to 16 kHz mono WAV…');
+
+        /** @type {{samples: Float32Array, duration: number}} */
+        let decoded;
+        try {
+          decoded = await decodeToMono16k(rawBlob);
+        } catch (/** @type {any} */ decodeErr) {
+          setResult(
+            `Decode failed: ${decodeErr instanceof Error ? decodeErr.message : String(decodeErr)}`,
+          );
           return;
         }
-        recordButton.disabled = true;
-        setResult('Requesting microphone access...');
+
+        const wavBlob = encodeWav(decoded.samples, TARGET_SAMPLE_RATE);
+
+        dom.recordingMeta.textContent =
+          `Format: WAV 16 kHz mono | MIME: ${wavBlob.type} | ` +
+          `Size: ${formatKB(wavBlob.size)} KB | Duration: ${decoded.duration.toFixed(1)}s`;
+
+        await upload(wavBlob, 'recording.wav');
+      }
+
+      /**
+       * Upload the raw browser blob as-is and show metadata.
+       * @param {Blob} rawBlob
+       */
+      async function handleRawFormat(rawBlob) {
+        const ext = fileExtension(rawBlob.type);
+
+        dom.recordingMeta.textContent =
+          `Format: raw browser | MIME: ${rawBlob.type || '(empty)'} | ` +
+          `Size: ${formatKB(rawBlob.size)} KB`;
+
+        await upload(rawBlob, `recording.${ext}`);
+      }
+
+      /* ────────────────────────────────────────────────────────
+       *  Button handler
+       * ──────────────────────────────────────────────────────── */
+
+      dom.recordButton.addEventListener('click', async () => {
+        // Stop an in-progress recording
+        if (state.recorder?.state === 'recording') {
+          dom.recordButton.disabled = true;
+          state.recorder.stop();
+          return;
+        }
+
+        dom.recordButton.disabled = true;
+        setResult('Requesting microphone access…');
         try {
           await startRecording();
-        } catch (error) {
+        } catch (/** @type {any} */ error) {
           releaseStream();
-          setResult(`Recording failed: ${error instanceof Error ? error.message : String(error)}`);
-          recordButton.disabled = false;
+          setResult(describeMicError(error));
+          dom.recordButton.disabled = false;
         }
       });
     </script>
