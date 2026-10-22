@@ -1,6 +1,7 @@
 import { getLlmProvider } from '../providers/llm/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { logger } from '../utils/logger.js';
+import { normalizeText, type MistakeType } from '../utils/text.js';
 import {
   conversationLlmOutputSchema,
   type ConversationLlmOutput,
@@ -10,6 +11,12 @@ type ConversationLlmInput = {
   system: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
 };
+
+export interface Correction {
+  corrected: string;
+  explanation: string;
+  type: MistakeType;
+}
 
 function stripMarkdownFences(response: string): string {
   return response
@@ -28,6 +35,34 @@ function parseLlmOutput(response: string): ConversationLlmOutput {
   }
 
   return result.data;
+}
+
+/**
+ * Extract a Correction from the LLM output, or null when there is no
+ * real mistake. Guards against LLMs that flag a mistake but return the
+ * original text unchanged (or differ only by case/punctuation).
+ */
+export function toCorrection(
+  o: {
+    hasMistake: boolean;
+    corrected: string;
+    explanation: string;
+    mistakeType: MistakeType;
+  },
+  original: string,
+): Correction | null {
+  const corrected = o.corrected.trim();
+  if (!o.hasMistake || !corrected) return null;
+
+  // Guard: LLMs sometimes flag a mistake but return the input unchanged,
+  // or differ only by case/punctuation (STT artifacts, not errors).
+  if (normalizeText(corrected) === normalizeText(original)) return null;
+
+  return {
+    corrected,
+    explanation: o.explanation.trim(),
+    type: o.mistakeType,
+  };
 }
 
 export async function generateConversationResponse(

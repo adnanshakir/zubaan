@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-20
+> **Last verified against code**: 2026-10-21
 
 ---
 
@@ -534,11 +534,20 @@ curl -X POST http://localhost:5000/api/conversations \
   "reply": "That sounds great! How are you finding the neighbourhood so far?",
   "audioUrl": "/audio/b2c3d4e5-f6a7-8901-bcde-f12345678901.wav",
   "endConversation": false,
-  "turnsRemaining": 3
+  "turnsRemaining": 3,
+  "correction": {
+    "corrected": "I went to the market yesterday.",
+    "explanation": "Use \"went\" as the past tense of \"go\".",
+    "type": "tense"
+  }
 }
 ```
 
 `audioUrl` may be `null` if TTS fails.
+
+`correction` is `null` when the learner's message has no mistake. When
+present it contains the corrected sentence, a short explanation, and a
+mistake type. See `Correction` in §4.
 
 When `endConversation` is `true`, the conversation status changes to
 `"completed"` and no further turns can be taken.
@@ -557,7 +566,10 @@ When `endConversation` is `true`, the conversation status changes to
 **Side Effects**:
 - Appends the user message to `conversation.messages` (atomic update with
   guard against exceeding `maxTurns`).
-- Calls the LLM provider to generate a response (validated JSON).
+- Calls the LLM provider to generate a response (validated JSON) which
+  now includes correction fields alongside the reply.
+- Computes a `Correction` from the LLM output and attaches it to the user
+  message (same save that appends the AI message).
 - Calls TTS to synthesize the AI reply; audio saved to disk.
 - Appends the AI message to `conversation.messages`.
 - If `turnsRemaining === 0` or LLM sets `endConversation: true`, the
@@ -656,8 +668,13 @@ curl -X POST http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10/en
     },
     {
       "role": "user",
-      "text": "Hi, I am your new neighbour.",
+      "text": "I goed to the market yesterday.",
       "audioUrl": null,
+      "correction": {
+        "corrected": "I went to the market yesterday.",
+        "explanation": "Use \"went\" as the past tense of \"go\".",
+        "type": "tense"
+      },
       "createdAt": "2026-10-13T07:35:30.000Z"
     }
   ],
@@ -924,12 +941,21 @@ curl -X POST http://localhost:5000/api/speech/stt \
 
 **ConversationMessage**:
 
-| Field      | Type     | Required | Default      |
-| ---------- | -------- | -------- | ------------ |
-| `role`     | string   | Yes      | —            | `"user"` \| `"ai"` |
-| `text`     | string   | Yes      | —            | Trimmed |
-| `audioUrl` | string   | No       | `null`       |
-| `createdAt`| Date     | Yes      | `Date.now`   |
+| Field        | Type                  | Required | Default      | Notes |
+| ------------ | --------------------- | -------- | ------------ | ----- |
+| `role`       | string                | Yes      | —            | `"user"` \| `"ai"` |
+| `text`       | string                | Yes      | —            | Trimmed |
+| `audioUrl`   | string                | No       | `null`       | |
+| `correction` | `Correction` \| null  | No       | `null`       | User messages only. See `Correction` below. |
+| `createdAt`  | Date                  | Yes      | `Date.now`   | |
+
+**Correction** (embedded in user messages when a mistake is found):
+
+| Field         | Type          | Required | Notes |
+| ------------- | ------------- | -------- | ----- |
+| `corrected`   | string        | Yes      | The corrected sentence |
+| `explanation` | string        | Yes      | One short sentence, max 160 chars |
+| `type`        | `MistakeType` | Yes      | See §4.5 |
 
 ### 4.4 SpeechLog
 
@@ -1024,6 +1050,12 @@ curl -X POST http://localhost:5000/api/speech/stt \
 
 ```
 "mock" | "sarvam"
+```
+
+**MistakeType**:
+
+```
+"grammar" | "tense" | "preposition" | "word_choice" | "other"
 ```
 
 ### 4.6 TypeScript Interfaces
@@ -1141,6 +1173,7 @@ interface ConversationTurnResponse {
   audioUrl: string | null;
   endConversation: boolean;
   turnsRemaining: number;
+  correction: Correction | null;
 }
 
 interface ConversationEndResponse {
@@ -1164,7 +1197,16 @@ interface ConversationMessage {
   role: MessageRole;
   text: string;
   audioUrl: string | null;
+  correction?: Correction | null; // user messages only
   createdAt: string;              // ISO 8601
+}
+
+type MistakeType = "grammar" | "tense" | "preposition" | "word_choice" | "other";
+
+interface Correction {
+  corrected: string;
+  explanation: string;
+  type: MistakeType;
 }
 
 interface TtsResponse {
@@ -1429,7 +1471,12 @@ and is **not** overridable per-turn. Voice and pace are set from
 ### 6.4 LLM Provider Details
 
 **Mock** (`LLM_PROVIDER=mock`):
-- Always returns `{ "reply": "Nice! Can you tell me more?", "endConversation": false }`
+- Always returns `{ "reply": "Nice! Can you tell me more?", "endConversation": false }` with
+  correction fields.
+- Correction rule: if the learner's text matches `/\bgoed\b/i`, returns
+  `hasMistake: true`, replaces "goed" with "went", explanation
+  `'Use "went" as the past tense of "go".'`, mistakeType `"tense"`.
+  Otherwise `hasMistake: false` with empty correction fields.
 - Useful for frontend development without external dependencies
 
 **Sarvam** (`LLM_PROVIDER=sarvam`):

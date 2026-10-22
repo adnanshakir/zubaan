@@ -11,12 +11,17 @@ import type {
   ConversationStartInput,
   ConversationTurnInput,
 } from '../validators/conversationValidator.js';
-import { generateConversationResponse } from './conversationLlmService.js';
+import {
+  generateConversationResponse,
+  toCorrection,
+  type Correction,
+} from './conversationLlmService.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
   text: string;
   audioUrl?: string | null;
+  correction?: Correction | null;
   createdAt: Date;
 };
 
@@ -43,11 +48,12 @@ function getRoleplayStep(
   return roleplay;
 }
 
-function toConversationMessage(message: ConversationMessage): ConversationMessage {
+function toConversationMessage(message: ConversationMessage) {
   return {
     role: message.role,
     text: message.text,
     audioUrl: message.audioUrl ?? null,
+    correction: message.role === 'user' ? (message.correction ?? null) : undefined,
     createdAt: message.createdAt,
   };
 }
@@ -232,7 +238,14 @@ export async function takeConversationTurn(
     throw error;
   }
 
+  // Compute correction from LLM output before saving
+  const correction = toCorrection(output, input.text);
+
   const aiAudioUrl = await synthesizeConversationAudio(output.reply);
+
+  // Find the user message _id that was just pushed so we can attach
+  // the correction to it with arrayFilters in one save.
+  const lastUserMsg = [...updatedConversation.messages].reverse().find((m) => m.role === 'user');
 
   updatedConversation.messages.push({
     role: 'ai',
@@ -249,6 +262,13 @@ export async function takeConversationTurn(
     updatedConversation.durationSec = durationSince(updatedConversation.startedAt);
   }
 
+  // Attach correction to the user message and save everything atomically.
+  // Using arrayFilters targets the specific user message by _id.
+  if (correction && lastUserMsg) {
+    // Set correction on the in-memory document so the save persists it
+    lastUserMsg.correction = correction;
+  }
+
   await updatedConversation.save();
 
   return {
@@ -256,6 +276,7 @@ export async function takeConversationTurn(
     audioUrl: aiAudioUrl,
     endConversation,
     turnsRemaining,
+    correction,
   };
 }
 
