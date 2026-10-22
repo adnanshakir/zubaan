@@ -46,6 +46,7 @@ export function buildConversationPrompt({
     'The message is a speech-to-text transcript, so ignore capitalization, punctuation, spelling and filler words (um, uh).',
     'Flag a mistake only if a teacher would correct it in a spoken lesson: wrong tense, subject-verb agreement, missing or wrong article or preposition, wrong word choice, broken word order.',
     'Do not flag style or alternative phrasings. If the message is understandable, acceptable everyday English, set hasMistake to false.',
+    'Earlier learner messages are context only. Never correct them again. If the latest message is correct, set hasMistake to false even if earlier messages had mistakes.',
     'If there are several mistakes, report only the single most important one.',
     'explanation: one short sentence in very simple English, max 15 words.',
     'Your roleplay reply must NOT mention or correct the mistake. Stay in character.',
