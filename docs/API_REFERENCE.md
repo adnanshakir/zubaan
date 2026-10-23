@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-21
+> **Last verified against code**: 2026-10-22
 
 ---
 
@@ -539,7 +539,8 @@ curl -X POST http://localhost:5000/api/conversations \
     "corrected": "I went to the market yesterday.",
     "explanation": "Use \"went\" as the past tense of \"go\".",
     "type": "tense"
-  }
+  },
+  "feedback": null
 }
 ```
 
@@ -548,6 +549,7 @@ curl -X POST http://localhost:5000/api/conversations \
 `correction` is `null` when the learner's message has no mistake. When
 present it contains the corrected sentence, a short explanation, and a
 mistake type. See `Correction` in §4.
+`feedback` is `null` unless this turn completed the conversation.
 
 When `endConversation` is `true`, the conversation status changes to
 `"completed"` and no further turns can be taken.
@@ -611,12 +613,32 @@ curl -X POST http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10/tu
   "conversationId": "665f1a2b3c4d5e6f7a8b9c10",
   "status": "completed",
   "durationSec": 185,
-  "userTurns": 3
+  "userTurns": 3,
+  "feedback": {
+    "userTurns": 3,
+    "durationSec": 185,
+    "mistakeCount": 1,
+    "corrections": [
+      {
+        "original": "I goed to market yesterday",
+        "corrected": "I went to market yesterday",
+        "explanation": "Use \"went\" as the past tense of \"go\".",
+        "type": "tense"
+      }
+    ],
+    "targetPhrases": {
+      "used": ["I just moved in last week."],
+      "missed": ["Hi, I am your new neighbour.", "It is nice to meet you."]
+    }
+  }
 }
 ```
 
 If the conversation was already `"completed"`, the response returns its
 existing data (idempotent for completed status).
+
+`feedback` contains `userTurns`, `durationSec` (`number | null`),
+`mistakeCount`, `corrections[]`, and `targetPhrases.used` / `missed`.
 
 **Error Responses**:
 
@@ -679,10 +701,12 @@ curl -X POST http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10/en
     }
   ],
   "startedAt": "2026-10-13T07:35:00.000Z",
-  "endedAt": null,
-  "durationSec": null
+  "feedback": null
 }
 ```
+
+`feedback` is non-null only when status is completed. `endedAt` and
+`durationSec` are omitted while status is active and present once completed.
 
 **Error Responses**:
 
@@ -1174,6 +1198,7 @@ interface ConversationTurnResponse {
   endConversation: boolean;
   turnsRemaining: number;
   correction: Correction | null;
+  feedback: ConversationFeedback | null;
 }
 
 interface ConversationEndResponse {
@@ -1181,6 +1206,7 @@ interface ConversationEndResponse {
   status: ConversationStatus;
   durationSec: number;
   userTurns: number;
+  feedback: ConversationFeedback;
 }
 
 interface ConversationGetResponse {
@@ -1189,8 +1215,9 @@ interface ConversationGetResponse {
   status: ConversationStatus;
   messages: ConversationMessage[];
   startedAt: string;              // ISO 8601
-  endedAt: string | null;         // ISO 8601
-  durationSec: number | null;
+  endedAt?: string;               // ISO 8601; present once completed
+  durationSec?: number;           // present once completed
+  feedback: ConversationFeedback | null;
 }
 
 interface ConversationMessage {
@@ -1207,6 +1234,21 @@ interface Correction {
   corrected: string;
   explanation: string;
   type: MistakeType;
+}
+
+interface FeedbackCorrection {
+  original: string;
+  corrected: string;
+  explanation: string;
+  type: MistakeType;
+}
+
+interface ConversationFeedback {
+  userTurns: number;
+  durationSec: number | null;
+  mistakeCount: number;
+  corrections: FeedbackCorrection[];
+  targetPhrases: { used: string[]; missed: string[] };
 }
 
 interface TtsResponse {
@@ -1637,6 +1679,9 @@ Recording checklist:
 - **Conversation end is partially idempotent**: Ending an already-completed
   conversation returns `200` with the existing data. But ending an
   `"abandoned"` conversation returns `409`.
+- **Feedback is computed on read from stored corrections (no LLM call).**
+  Target-phrase matching is a normalised whole-word match, so contractions
+  (`'I'm'` vs `'I am'`) count as missed.
 - **The `GET /api/lessons` endpoint requires auth** (`x-user-id`), even
   though lessons are not user-specific. This is because `attachUser` is
   applied to the route.
@@ -1662,7 +1707,6 @@ not exist yet**. Do not build frontend features that depend on these.
 | **`POST /api/onboarding/placement`** | Listed in AGENT.md but **no route exists**. Voice placement is not implemented. |
 | **Mistake model**                | Listed in AGENT.md but **no Mongoose model exists**.   |
 | **SavedWord model**              | Listed in AGENT.md but **no Mongoose model exists**.   |
-| **Feedback (post-conversation)** | AGENT.md describes a feedback JSON shape but no feedback service, endpoint, or model exists. |
 | **Whisper STT provider**         | Referenced in AGENT.md but no implementation exists. Only Sarvam is available. |
 | **TTS caching**                  | `synthesize` is pure but no cache layer exists.        |
 | **WebSocket / streaming**        | Explicitly out of scope.                               |

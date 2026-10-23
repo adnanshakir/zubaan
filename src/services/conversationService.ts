@@ -16,6 +16,7 @@ import {
   toCorrection,
   type Correction,
 } from './conversationLlmService.js';
+import { buildConversationFeedback, type ConversationFeedback } from './feedbackService.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
@@ -271,12 +272,22 @@ export async function takeConversationTurn(
 
   await updatedConversation.save();
 
+  let feedback: ConversationFeedback | null = null;
+  if (endConversation) {
+    const completedConversation = await Conversation.findById(conversationId).lean();
+    if (!completedConversation) {
+      throw new ApiError(404, 'Conversation not found');
+    }
+    feedback = await buildConversationFeedback(completedConversation);
+  }
+
   return {
     reply: output.reply,
     audioUrl: aiAudioUrl,
     endConversation,
     turnsRemaining,
     correction,
+    feedback,
   };
 }
 
@@ -299,11 +310,14 @@ export async function endConversation(user: ConversationUser, conversationId: st
     status: conversation.status,
     durationSec: conversation.durationSec ?? 0,
     userTurns: countUserTurns(conversation.messages),
+    feedback: await buildConversationFeedback(conversation),
   };
 }
 
 export async function getConversation(user: ConversationUser, conversationId: string) {
   const conversation = await findOwnedConversation(user._id, conversationId);
+  const feedback =
+    conversation.status === 'completed' ? await buildConversationFeedback(conversation) : null;
 
   return {
     conversationId: conversation._id.toString(),
@@ -313,5 +327,6 @@ export async function getConversation(user: ConversationUser, conversationId: st
     startedAt: conversation.startedAt,
     endedAt: conversation.endedAt,
     durationSec: conversation.durationSec,
+    feedback,
   };
 }
