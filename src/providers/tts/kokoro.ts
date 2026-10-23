@@ -2,6 +2,8 @@ import { env } from '../../config/env.js';
 import { ApiError } from '../../utils/ApiError.js';
 import type { TtsProvider } from './index.js';
 
+export const KOKORO_DEFAULT_VOICE = 'af_heart';
+
 type KokoroChunk = {
   index: number;
   audio: string;
@@ -171,7 +173,7 @@ export const kokoroTtsProvider: TtsProvider = {
         body: JSON.stringify({
           text: input.text,
           language: 'en',
-          voice: input.voice ?? 'af_heart',
+          voice: input.voice ?? KOKORO_DEFAULT_VOICE,
         }),
         signal: controller.signal,
       });

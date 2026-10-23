@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-22
+> **Last verified against code**: 2026-10-23
 
 ---
 
@@ -753,7 +753,8 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
   "pace": 1,
   "chars": 42,
   "totalMs": 1523,
-  "durationMs": null
+  "durationMs": null,
+  "cached": false
 }
 ```
 
@@ -766,6 +767,7 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 | `chars`      | `number`          | Character count of input text                  |
 | `totalMs`    | `number`          | Wall-clock time of the provider call (ms)      |
 | `durationMs` | `number \| null`  | Duration of generated audio (ms), if available |
+| `cached`     | `boolean`         | True when an existing file was reused. On a hit no provider call is made: `totalMs` is 0, `durationMs` is null and no SpeechLog is written. |
 
 **Error Responses**:
 
@@ -1259,6 +1261,7 @@ interface TtsResponse {
   chars: number;
   totalMs: number;
   durationMs: number | null;
+  cached: boolean;
 }
 
 interface SttResponse {
@@ -1498,6 +1501,10 @@ and is **not** overridable per-turn. Voice and pace are set from
 - Timeout: `KOKORO_TIMEOUT_MS` (default: 90000)
 - Streams NDJSON chunks of base64-encoded WAV audio
 
+Audio is cached on disk. The file name is a hash of provider, model, language,
+effective voice, effective pace (ignored for Kokoro) and text, so identical
+requests share one file.
+
 ### 6.3 STT Provider Details
 
 **Sarvam (Saaras v3)**:
@@ -1648,6 +1655,7 @@ Recording checklist:
 ### 8.4 Audio Playback
 
 - TTS responses return a relative `audioUrl` (e.g., `/audio/uuid.wav`).
+- Different messages can share the same `audioUrl`.
 - Build the full URL: `http://<host>:<port>/audio/<filename>.wav`
 - Format is always WAV from both TTS providers.
 - `audioUrl` may be `null` if TTS fails — the client should handle this
@@ -1708,7 +1716,6 @@ not exist yet**. Do not build frontend features that depend on these.
 | **Mistake model**                | Listed in AGENT.md but **no Mongoose model exists**.   |
 | **SavedWord model**              | Listed in AGENT.md but **no Mongoose model exists**.   |
 | **Whisper STT provider**         | Referenced in AGENT.md but no implementation exists. Only Sarvam is available. |
-| **TTS caching**                  | `synthesize` is pure but no cache layer exists.        |
 | **WebSocket / streaming**        | Explicitly out of scope.                               |
 | **Pronunciation scoring**        | Explicitly out of scope.                               |
 | **Re-evaluation of level**       | AGENT.md says re-evaluate after 5 conversations; not implemented. |

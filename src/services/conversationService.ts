@@ -1,11 +1,9 @@
 import { isValidObjectId, type Types } from 'mongoose';
-import { env } from '../config/env.js';
 import { Conversation } from '../models/Conversation.js';
 import { Lesson, type RoleplayStep } from '../models/Lesson.js';
 import { buildConversationPrompt } from '../prompts/conversationPrompt.js';
-import { synthesizeSpeech } from './speechService.js';
+import { synthesizeSpeechToStoredAudio } from './speechService.js';
 import type { Level } from '../types/content.js';
-import { saveAudioToStorage } from '../utils/audioStorage.js';
 import { ApiError } from '../utils/ApiError.js';
 import type {
   ConversationStartInput,
@@ -59,33 +57,14 @@ function toConversationMessage(message: ConversationMessage) {
   };
 }
 
-function getConversationSpeechDefaults() {
-  if (env.TTS_PROVIDER === 'sarvam') {
-    return {
-      voice: env.SARVAM_TTS_VOICE,
-      pace: env.SARVAM_TTS_PACE,
-    };
-  }
-
-  return {
-    voice: undefined,
-    pace: undefined,
-  };
-}
-
 async function synthesizeConversationAudio(text: string): Promise<string | null> {
-  const defaults = getConversationSpeechDefaults();
-
   try {
-    const speech = await synthesizeSpeech({
+    const speech = await synthesizeSpeechToStoredAudio({
       text,
       language: 'en-IN',
-      provider: env.TTS_PROVIDER,
-      voice: defaults.voice,
-      pace: defaults.pace,
     });
 
-    return await saveAudioToStorage(speech.audio, speech.format);
+    return speech.audioUrl;
   } catch {
     return null;
   }

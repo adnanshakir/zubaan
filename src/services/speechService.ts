@@ -14,8 +14,10 @@ import {
   type TtsLanguage,
   type TtsProviderName,
 } from '../providers/tts/index.js';
+import { KOKORO_DEFAULT_VOICE } from '../providers/tts/kokoro.js';
+import { SARVAM_MODEL } from '../providers/tts/sarvam.js';
 import { ApiError } from '../utils/ApiError.js';
-import { saveAudioToStorage } from '../utils/audioStorage.js';
+import { buildAudioCacheName, findCachedAudio, saveAudioAs } from '../utils/audioStorage.js';
 import { logger } from '../utils/logger.js';
 
 export type SynthesizeSpeechInput = {
@@ -44,7 +46,8 @@ export type SynthesizeSpeechStoredResult = {
   pace?: number;
   chars: number;
   totalMs: number;
-  durationMs?: number;
+  durationMs: number | null;
+  cached: boolean;
 };
 
 export type TranscribeSpeechInput = {
@@ -290,17 +293,53 @@ export async function synthesizeSpeech(
 export async function synthesizeSpeechToStoredAudio(
   input: SynthesizeSpeechInput,
 ): Promise<SynthesizeSpeechStoredResult> {
-  const result = await synthesizeSpeech(input);
-  const audioUrl = await saveAudioToStorage(result.audio, result.format);
+  const providerName = resolveTtsProviderName(input.provider);
+  const voice =
+    input.voice ??
+    (providerName === 'sarvam' ? (env.SARVAM_TTS_VOICE ?? '') : KOKORO_DEFAULT_VOICE);
+  const pace = providerName === 'sarvam' ? (input.pace ?? env.SARVAM_TTS_PACE ?? null) : null;
+  const model = providerName === 'sarvam' ? SARVAM_MODEL : 'kokoro';
+  const fileName = buildAudioCacheName({
+    provider: providerName,
+    model,
+    language: input.language,
+    voice,
+    pace,
+    text: input.text,
+  });
+  const cachedAudioUrl = await findCachedAudio(fileName);
+  const chars = input.text.length;
+
+  if (cachedAudioUrl) {
+    return {
+      audioUrl: cachedAudioUrl,
+      provider: providerName,
+      voice,
+      pace: pace ?? undefined,
+      chars,
+      totalMs: 0,
+      durationMs: null,
+      cached: true,
+    };
+  }
+
+  const result = await synthesizeSpeech({
+    ...input,
+    provider: providerName,
+    voice: voice || undefined,
+    pace: pace ?? undefined,
+  });
+  const audioUrl = await saveAudioAs(fileName, result.audio);
 
   return {
     audioUrl,
     provider: result.provider,
-    voice: result.voice,
-    pace: result.pace,
+    voice,
+    pace: pace ?? undefined,
     chars: result.chars,
     totalMs: result.totalMs,
-    durationMs: result.durationMs,
+    durationMs: result.durationMs ?? null,
+    cached: false,
   };
 }
 
