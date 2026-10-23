@@ -6,6 +6,7 @@ import { errorHandler } from './middlewares/errorHandler.js';
 import { conversationRouter } from './routes/conversationRoutes.js';
 import { homeRouter } from './routes/homeRoutes.js';
 import { lessonRouter } from './routes/lessonRoutes.js';
+import { mistakeRouter } from './routes/mistakeRoutes.js';
 import { onboardingRouter } from './routes/onboardingRoutes.js';
 import { speechRouter } from './routes/speechRoutes.js';
 import type { ApiResponse } from './types/common.js';
@@ -34,6 +35,7 @@ app.use('/audio', express.static(getAudioStorageDirPath()));
 
 app.use('/api/onboarding', onboardingRouter);
 app.use('/api/lessons', lessonRouter);
+app.use('/api/mistakes', mistakeRouter);
 app.use('/api/conversations', conversationRouter);
 app.use('/api/home', homeRouter);
 app.use('/api/speech', speechRouter);

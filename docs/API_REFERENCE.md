@@ -21,6 +21,7 @@
    - [Conversations](#35-conversations)
    - [Speech — TTS](#36-speech--tts)
    - [Speech — STT](#37-speech--stt)
+   - [Mistakes](#38-mistakes)
 4. [Data Models](#4-data-models)
 5. [Flows](#5-flows)
 6. [Providers and Configuration](#6-providers-and-configuration)
@@ -896,6 +897,84 @@ curl -X POST http://localhost:5000/api/speech/stt \
 
 ---
 
+### 3.8 Mistakes
+
+The mistake bank stores non-null corrections found during conversation turns
+and returns only the authenticated user's mistakes.
+
+**Authentication**: `x-user-id` header.
+
+#### `GET /api/mistakes`
+
+Lists mistakes newest first using cursor pagination.
+
+| Query parameter | Type   | Required | Notes |
+| --------------- | ------ | -------- | ----- |
+| `type`          | string | No       | `grammar`, `tense`, `preposition`, `word_choice`, or `other` |
+| `limit`         | number | No       | 1–50; default `20` |
+| `before`        | string | No       | 24-character MongoDB ObjectId cursor |
+
+**Response `200`**:
+
+```json
+{
+  "items": [
+    {
+      "id": "665f1a2b3c4d5e6f7a8b9c0d",
+      "original": "I goed there",
+      "corrected": "I went there",
+      "explanation": "Use the past tense went, not goed.",
+      "type": "tense",
+      "conversationId": "665f1a2b3c4d5e6f7a8b9c0e",
+      "lessonId": "665f1a2b3c4d5e6f7a8b9c0f",
+      "createdAt": "2026-10-23T12:00:00.000Z"
+    }
+  ],
+  "nextBefore": "665f1a2b3c4d5e6f7a8b9c0c"
+}
+```
+
+Pass the previous response's `nextBefore` as `before` to fetch the next page;
+`null` means there are no more pages.
+
+#### `GET /api/mistakes/summary`
+
+Returns the authenticated user's total mistakes and counts by mistake type.
+
+**Response `200`**:
+
+```json
+{
+  "total": 1,
+  "byType": {
+    "grammar": 0,
+    "tense": 1,
+    "preposition": 0,
+    "word_choice": 0,
+    "other": 0
+  }
+}
+```
+
+**Errors**:
+
+| Status | Condition |
+| ------ | --------- |
+| 400    | Invalid query or cursor |
+| 401    | Missing or invalid `x-user-id` |
+
+**Example curl**:
+
+```bash
+curl "http://localhost:5000/api/mistakes?type=tense&limit=20" \
+  -H "x-user-id: 665f1a2b3c4d5e6f7a8b9c0d"
+
+curl "http://localhost:5000/api/mistakes/summary" \
+  -H "x-user-id: 665f1a2b3c4d5e6f7a8b9c0d"
+```
+
+---
+
 ## 4. Data Models
 
 ### 4.1 User
@@ -1010,6 +1089,20 @@ curl -X POST http://localhost:5000/api/speech/stt \
 | `ok`          | boolean  | Yes      |                                    |
 | `error`       | string   | No       | Max 160 chars                      |
 | `createdAt`   | Date     | Yes      | Default: now                       |
+
+**Mistake**:
+
+| Field            | Type       | Required | Default | Notes |
+| ---------------- | ---------- | -------- | ------- | ----- |
+| `_id`            | ObjectId   | Auto     | —       | |
+| `userId`         | ObjectId   | Yes      | —       | Reference to `User` |
+| `conversationId` | ObjectId   | Yes      | —       | Reference to `Conversation` |
+| `lessonId`       | ObjectId   | Yes      | —       | Reference to `Lesson` |
+| `original`       | string     | Yes      | —       | Trimmed; max 500 chars |
+| `corrected`      | string     | Yes      | —       | Trimmed; max 500 chars |
+| `explanation`    | string     | No       | `""`    | Trimmed; max 160 chars |
+| `type`           | MistakeType | Yes     | —       | |
+| `createdAt`      | Date       | Yes      | Auto    | Newest-first indexes by user |
 
 ### 4.5 Enums
 
@@ -1246,6 +1339,27 @@ interface Correction {
   type: MistakeType;
 }
 
+interface MistakeItem {
+  id: string;
+  original: string;
+  corrected: string;
+  explanation: string;
+  type: MistakeType;
+  conversationId: string;
+  lessonId: string;
+  createdAt: string;
+}
+
+interface MistakesListResponse {
+  items: MistakeItem[];
+  nextBefore: string | null;
+}
+
+interface MistakesSummaryResponse {
+  total: number;
+  byType: Record<MistakeType, number>;
+}
+
 interface FeedbackCorrection {
   original: string;
   corrected: string;
@@ -1402,6 +1516,7 @@ the conversation.
    - **Server** calls LLM to generate AI reply
    - **Server** calls TTS to synthesize AI reply
    - **Server** appends AI message
+   - Each turn with a non-null correction also stores a `Mistake` for the user.
    - Returns `{ reply, audioUrl, endConversation, turnsRemaining, correction }`
 
 6. **Client** plays the AI reply audio
@@ -1715,13 +1830,11 @@ not exist yet**. Do not build frontend features that depend on these.
 | **`PATCH /api/users/me`**        | Listed in AGENT.md but **no route, controller, or service exists**. |
 | **`GET /api/users/me`**          | Listed in AGENT.md but **no route, controller, or service exists**. |
 | **`POST /api/conversations/:id/retry`** | Listed in AGENT.md but **no route exists**. |
-| **`GET /api/mistakes`**          | Listed in AGENT.md but **no route, model, or service exists**. |
 | **`GET /api/mistakes/due`**      | Listed in AGENT.md but **no route, model, or service exists**. |
 | **`POST /api/vocabulary`**       | Listed in AGENT.md but **no route, model, or service exists**. |
 | **`GET /api/vocabulary`**        | Listed in AGENT.md but **no route, model, or service exists**. |
 | **`GET /api/progress`**          | Listed in AGENT.md but **no route or service exists**. |
 | **`POST /api/onboarding/placement`** | Listed in AGENT.md but **no route exists**. Voice placement is not implemented. |
-| **Mistake model**                | Listed in AGENT.md but **no Mongoose model exists**.   |
 | **SavedWord model**              | Listed in AGENT.md but **no Mongoose model exists**.   |
 | **Whisper STT provider**         | Referenced in AGENT.md but no implementation exists. Only Sarvam is available. |
 | **WebSocket / streaming**        | Explicitly out of scope.                               |
@@ -1749,6 +1862,8 @@ not exist yet**. Do not build frontend features that depend on these.
 | `GET /api/conversations/:id`          | ✅ §3.5     |
 | `POST /api/speech/tts`                | ✅ §3.6     |
 | `POST /api/speech/stt`                | ✅ §3.7     |
+| `GET /api/mistakes`                   | ✅ §3.8     |
+| `GET /api/mistakes/summary`           | ✅ §3.8     |
 | `GET /audio/*` (static)               | ✅ §1       |
 
 ### Endpoints listed in AGENT.md but **NOT** in code:
@@ -1759,11 +1874,10 @@ not exist yet**. Do not build frontend features that depend on these.
 | `GET /api/users/me`                      | Not implemented  |
 | `PATCH /api/users/me`                    | Not implemented  |
 | `POST /api/conversations/:id/retry`      | Not implemented  |
-| `GET /api/mistakes`                      | Not implemented  |
 | `GET /api/mistakes/due`                  | Not implemented  |
 | `POST /api/vocabulary`                   | Not implemented  |
 | `GET /api/vocabulary`                    | Not implemented  |
 | `GET /api/progress`                      | Not implemented  |
 
-**All 12 routes in code are documented: 11 API/health routes plus the
+**All 14 routes in code are documented: 13 API/health routes plus the
 static audio route. Zero mismatches.**
