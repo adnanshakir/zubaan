@@ -53,7 +53,19 @@ function getRawPcmCodec(mimeType: SttSupportedMimeType): string | undefined {
   return RAW_PCM_CODEC_MAP[mimeType];
 }
 
-function mapSarvamSttErrorStatus(status: number): ApiError {
+function providerErrorText(error: unknown): string {
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  if (error && typeof error === 'object') {
+    return Object.values(error).map(providerErrorText).filter(Boolean).join(' ');
+  }
+
+  return '';
+}
+
+function mapSarvamSttErrorStatus(status: number, providerError?: unknown): ApiError {
   if (status === 429) {
     return new ApiError(429, 'STT provider rate limit exceeded');
   }
@@ -63,7 +75,16 @@ function mapSarvamSttErrorStatus(status: number): ApiError {
   }
 
   if (status === 422) {
-    return new ApiError(400, getSttDurationLimitMessage());
+    const message = providerErrorText(providerError);
+    if (
+      /(duration|seconds?).*(exceed|limit|long|max|greater|over|above)|too long|longer than/i.test(
+        message,
+      )
+    ) {
+      return new ApiError(400, getSttDurationLimitMessage());
+    }
+
+    return new ApiError(400, 'Invalid audio input');
   }
 
   if (status >= 400 && status < 500) {
@@ -115,7 +136,14 @@ export const sarvamSttProvider: SttProvider = {
       });
 
       if (!response.ok) {
-        throw mapSarvamSttErrorStatus(response.status);
+        const responseBody = await response.text();
+        let providerError: unknown = responseBody;
+        try {
+          providerError = responseBody ? JSON.parse(responseBody) : undefined;
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+        throw mapSarvamSttErrorStatus(response.status, providerError);
       }
 
       const parsed = sarvamSttResponseSchema.safeParse(await response.json());

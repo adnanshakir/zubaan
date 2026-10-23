@@ -150,12 +150,14 @@ For multipart uploads (STT), if the file exceeds the size limit:
 ```json
 {
   "error": {
-    "message": "Audio file exceeds 10485760 bytes"
+    "message": "Audio file exceeds <STT_MAX_FILE_SIZE_BYTES> bytes"
   }
 }
 ```
 
-Status code: **400**. Other multer errors return `"Invalid multipart upload"`.
+Status code: **400**. The effective limit is `STT_MAX_FILE_SIZE_BYTES`
+(default: **10 MB**, or 10,485,760 bytes). Other multer errors return
+`"Invalid multipart upload"`.
 
 ### 2.8 Request Body Size Limits
 
@@ -743,6 +745,10 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 | `voice`    | `string` | No       | Trimmed, 1–120 chars                                    | Provider default       |
 | `pace`     | `number` | No       | 0.5–2.0                                                 | Provider default       |
 
+The 2500-character limit is validated before provider selection. Requests
+over the limit return the standard validation response shown below and do not
+reach a TTS provider.
+
 **Success Response** — `200`:
 
 ```json
@@ -767,7 +773,7 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 | `chars`      | `number`          | Character count of input text                  |
 | `totalMs`    | `number`          | Wall-clock time of the provider call (ms)      |
 | `durationMs` | `number \| null`  | Duration of generated audio (ms), if available |
-| `cached`     | `boolean`         | True when an existing file was reused. On a hit no provider call is made: `totalMs` is 0, `durationMs` is null and no SpeechLog is written. |
+| `cached`     | `boolean`          | True when an existing file was reused. On a hit no provider call is made: `totalMs` is 0, `durationMs` is null and no `SpeechLog` is written. |
 
 **Error Responses**:
 
@@ -775,7 +781,7 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 | ------ | --------------------------------------------------------- | ------------------------------------------------------------- |
 | 400    | Validation fails                                          | Zod issue message                                             |
 | 400    | Kokoro + non-English language                             | `"Kokoro supports English only"`                              |
-| 400    | Text exceeds 2500 chars (Sarvam)                          | `"Sarvam Bulbul v3 supports up to 2500 characters per request"` |
+| 400    | Text exceeds 2500 chars                                   | Zod validation response, e.g. `{"error":{"message":"Too big: expected string to have <=2500 characters"}}` |
 | 401    | Missing/invalid `x-user-id`                              | `"Unauthorized"`                                              |
 | 429    | Sarvam rate limit                                         | `"TTS provider rate limit exceeded"`                          |
 | 500    | Provider not configured (missing API key)                 | `"TTS provider is not configured"`                            |
@@ -785,7 +791,8 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 
 **Side Effects**:
 - Audio file saved to `storage/audio/` directory.
-- A `SpeechLog` document is created (kind: `"tts"`).
+- A `SpeechLog` document is created (kind: `"tts"`) only when the TTS provider
+  is called. Cache hits reuse the saved audio and do not create a log.
 
 **Example curl**:
 
@@ -817,7 +824,7 @@ curl -X POST http://localhost:5000/api/speech/tts \
 
 | Form Field   | Type   | Required | Validation / Constraints                            |
 | ------------ | ------ | -------- | --------------------------------------------------- |
-| `audio`      | File   | Yes      | Max 10 MB (10,485,760 bytes). Must be a supported MIME type (see below); MIME parameters are tolerated. |
+| `audio`      | File   | Yes      | Max `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes). Must be a supported MIME type (see below); MIME parameters are tolerated. |
 | `language`   | string | No       | One of the STT language codes (see §4.5). Default: `"unknown"`. |
 | `provider`   | string | No       | One of: `"sarvam"`. Default: `env.STT_PROVIDER`.    |
 
@@ -863,9 +870,10 @@ duration then proceeds as `null`, with Sarvam enforcing its own 30-second limit.
 | ------ | ------------------------------------------------- | -------------------------------------------------------------------- |
 | 400    | No file uploaded                                  | `"audio file is required"`                                           |
 | 400    | Unsupported MIME type                             | `"Unsupported audio format for STT"`                                 |
-| 400    | File exceeds size limit                           | `"Audio file exceeds 10485760 bytes"`                                |
+| 400    | File exceeds size limit                           | `"Audio file exceeds <STT_MAX_FILE_SIZE_BYTES> bytes"`                |
 | 400    | Audio duration exceeds max                        | `"Sarvam STT REST supports up to 30 seconds per request"`           |
-| 400    | Sarvam rejects the audio input, including its 30-second limit (422) | `"Sarvam STT REST supports up to 30 seconds per request"` |
+| 400    | Sarvam rejects invalid audio input (422)            | `"Invalid audio input"`                                                |
+| 400    | Sarvam rejects audio exceeding its duration limit (422) | `"Sarvam STT REST supports up to 30 seconds per request"`            |
 | 401    | Missing/invalid `x-user-id`                      | `"Unauthorized"`                                                     |
 | 429    | Sarvam rate limit                                 | `"STT provider rate limit exceeded"`                                 |
 | 500    | Provider not configured                           | `"STT provider is not configured"`                                   |
@@ -1394,7 +1402,7 @@ the conversation.
    - **Server** calls LLM to generate AI reply
    - **Server** calls TTS to synthesize AI reply
    - **Server** appends AI message
-   - Returns `{ reply, audioUrl, endConversation, turnsRemaining }`
+   - Returns `{ reply, audioUrl, endConversation, turnsRemaining, correction }`
 
 6. **Client** plays the AI reply audio
 
@@ -1434,7 +1442,7 @@ sequenceDiagram
         LLM-->>S: {reply, endConversation}
         S->>TTS: synthesize(reply)
         TTS-->>S: audio buffer
-        S-->>C: 200 {reply, audioUrl, endConversation, turnsRemaining}
+        S-->>C: 200 {reply, audioUrl, endConversation, turnsRemaining, correction}
         Note over C: Play AI reply audio
     end
 
@@ -1555,7 +1563,7 @@ All environment variable **names** (never values):
 | `SARVAM_TTS_PACE`          | Yes (conversation pace)   | 0.5–2.0                                 |
 | `SARVAM_TTS_TIMEOUT_MS`    | Yes (latency)             | Default: 30000                           |
 | `SARVAM_STT_TIMEOUT_MS`    | Yes (latency)             | Default: 15000                           |
-| `STT_MAX_FILE_SIZE_BYTES`  | Yes (upload limit)        | Default: 10485760 (10 MB)               |
+| `STT_MAX_FILE_SIZE_BYTES`  | Yes (upload limit)        | Default: 10 MB (10,485,760 bytes)        |
 | `STT_MAX_DURATION_SECONDS` | Yes (audio length limit)  | Default: 30, max: 30                     |
 | `KOKORO_TTS_URL`           | No                        | Default: `https://tts-system.vercel.app/api/tts` |
 | `KOKORO_TIMEOUT_MS`        | Yes (latency)             | Default: 90000                           |
@@ -1568,7 +1576,7 @@ All environment variable **names** (never values):
 
 | Constraint                      | Value                          |
 | ------------------------------- | ------------------------------ |
-| STT max file size               | 10 MB (10,485,760 bytes)       |
+| STT max file size               | `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes) |
 | STT max audio duration          | 30 seconds                     |
 | Unknown metadata duration       | Full scan once when within the file-size cap; otherwise Sarvam is the 30-second backstop |
 | STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.7) |
@@ -1649,7 +1657,7 @@ Recording checklist:
   into the Next.js frontend as-is.
 - **MIME type**: Set to `audio/wav` in the multipart upload.
 - **Duration**: Under 30 seconds.
-- **Size**: Under 10 MB.
+- **Size**: Under `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB).
 - **Flutter**: Record 16 kHz mono WAV natively (no browser encoding needed).
 
 ### 8.4 Audio Playback
@@ -1757,4 +1765,5 @@ not exist yet**. Do not build frontend features that depend on these.
 | `GET /api/vocabulary`                    | Not implemented  |
 | `GET /api/progress`                      | Not implemented  |
 
-**All 11 routes in code are documented. Zero mismatches.**
+**All 12 routes in code are documented: 11 API/health routes plus the
+static audio route. Zero mismatches.**

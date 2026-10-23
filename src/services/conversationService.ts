@@ -5,6 +5,7 @@ import { buildConversationPrompt } from '../prompts/conversationPrompt.js';
 import { synthesizeSpeechToStoredAudio } from './speechService.js';
 import type { Level } from '../types/content.js';
 import { ApiError } from '../utils/ApiError.js';
+import { logger } from '../utils/logger.js';
 import type {
   ConversationStartInput,
   ConversationTurnInput,
@@ -249,16 +250,19 @@ export async function takeConversationTurn(
     lastUserMsg.correction = correction;
   }
 
-  await updatedConversation.save();
-
   let feedback: ConversationFeedback | null = null;
   if (endConversation) {
-    const completedConversation = await Conversation.findById(conversationId).lean();
-    if (!completedConversation) {
-      throw new ApiError(404, 'Conversation not found');
+    try {
+      feedback = await buildConversationFeedback(updatedConversation);
+    } catch (error) {
+      logger.warn(
+        { conversationId, error },
+        'Conversation completed but feedback could not be built',
+      );
     }
-    feedback = await buildConversationFeedback(completedConversation);
   }
+
+  await updatedConversation.save();
 
   return {
     reply: output.reply,
@@ -277,11 +281,15 @@ export async function endConversation(user: ConversationUser, conversationId: st
     throw new ApiError(409, 'Conversation is not active');
   }
 
+  let feedback: ConversationFeedback;
   if (conversation.status === 'active') {
     conversation.status = 'completed';
     conversation.endedAt = new Date();
     conversation.durationSec = durationSince(conversation.startedAt);
+    feedback = await buildConversationFeedback(conversation);
     await conversation.save();
+  } else {
+    feedback = await buildConversationFeedback(conversation);
   }
 
   return {
@@ -289,7 +297,7 @@ export async function endConversation(user: ConversationUser, conversationId: st
     status: conversation.status,
     durationSec: conversation.durationSec ?? 0,
     userTurns: countUserTurns(conversation.messages),
-    feedback: await buildConversationFeedback(conversation),
+    feedback,
   };
 }
 

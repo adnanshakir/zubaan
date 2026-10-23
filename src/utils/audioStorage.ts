@@ -19,7 +19,6 @@ function audioUrlFor(fileName: string): string {
 }
 
 export function buildAudioCacheName(input: AudioCacheKeyInput): string {
-  const text = input.text.trim().replace(/\s+/g, ' ');
   const raw = JSON.stringify([
     AUDIO_CACHE_VERSION,
     input.provider,
@@ -27,7 +26,7 @@ export function buildAudioCacheName(input: AudioCacheKeyInput): string {
     input.language,
     input.voice,
     input.pace,
-    text,
+    input.text,
   ]);
 
   return `${createHash('sha256').update(raw).digest('hex').slice(0, 40)}.wav`;

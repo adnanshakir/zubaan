@@ -12,7 +12,7 @@ export type MistakeType = (typeof MISTAKE_TYPES)[number];
 
 export const normalizeText = (s: string): string =>
   s
-    .replace(/['']/g, "'")
+    .replace(/[\u2018\u2019]/g, "'")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s']/gu, ' ')
     .replace(/\s+/g, ' ')

@@ -68,7 +68,8 @@ export function toCorrection(
   original: string,
 ): Correction | null {
   const corrected = o.corrected.trim();
-  if (!o.hasMistake || !corrected) return null;
+  const explanation = o.explanation.trim();
+  if (!o.hasMistake || !corrected || !explanation) return null;
 
   // Guard: LLMs sometimes flag a mistake but return the input unchanged,
   // or differ only by case/punctuation (STT artifacts, not errors).
@@ -77,7 +78,7 @@ export function toCorrection(
 
   return {
     corrected,
-    explanation: o.explanation.trim(),
+    explanation,
     type: o.mistakeType,
   };
 }

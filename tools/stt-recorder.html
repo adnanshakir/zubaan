@@ -370,14 +370,16 @@
           const rawBlob = new Blob(chunks, { type: state.recorder?.mimeType ?? '' });
           releaseStream();
 
-          if (selectedFormat === 'wav') {
-            await handleWavFormat(rawBlob);
-          } else {
-            await handleRawFormat(rawBlob);
+          try {
+            if (selectedFormat === 'wav') {
+              await handleWavFormat(rawBlob);
+            } else {
+              await handleRawFormat(rawBlob);
+            }
+          } finally {
+            dom.recordButton.textContent = 'Record';
+            dom.recordButton.disabled = false;
           }
-
-          dom.recordButton.textContent = 'Record';
-          dom.recordButton.disabled = false;
         });
 
         state.recorder.start();
