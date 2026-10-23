@@ -1,10 +1,10 @@
 import { parseBuffer } from 'music-metadata';
-import { env } from '../config/env.js';
+import { env, getSttDurationLimitMessage } from '../config/env.js';
 import { SpeechLog } from '../models/SpeechLog.js';
 import {
   getSttProvider,
+  type SttSupportedMimeType,
   resolveSttProviderName,
-  sarvamRestSttMimeTypes,
   type SttLanguageCode,
   type SttProviderName,
 } from '../providers/stt/index.js';
@@ -14,8 +14,10 @@ import {
   type TtsLanguage,
   type TtsProviderName,
 } from '../providers/tts/index.js';
+import { KOKORO_DEFAULT_VOICE } from '../providers/tts/kokoro.js';
+import { SARVAM_MODEL } from '../providers/tts/sarvam.js';
 import { ApiError } from '../utils/ApiError.js';
-import { saveAudioToStorage } from '../utils/audioStorage.js';
+import { buildAudioCacheName, findCachedAudio, saveAudioAs } from '../utils/audioStorage.js';
 import { logger } from '../utils/logger.js';
 
 export type SynthesizeSpeechInput = {
@@ -44,12 +46,13 @@ export type SynthesizeSpeechStoredResult = {
   pace?: number;
   chars: number;
   totalMs: number;
-  durationMs?: number;
+  durationMs: number | null;
+  cached: boolean;
 };
 
 export type TranscribeSpeechInput = {
   audio: Buffer;
-  mimeType: string;
+  mimeType: SttSupportedMimeType;
   languageCode?: SttLanguageCode;
   provider?: SttProviderName;
 };
@@ -59,7 +62,7 @@ export type TranscribeSpeechResult = {
   languageCode: string | null;
   provider: SttProviderName;
   totalMs: number;
-  durationSeconds: number;
+  durationSeconds: number | null;
 };
 
 function toTtsApiError(error: unknown): ApiError {
@@ -125,7 +128,7 @@ async function writeSttSpeechLog(entry: {
   provider: SttProviderName;
   languageCode: string;
   mimeType: string;
-  audioSeconds: number;
+  audioSeconds: number | null;
   audioBytes: number;
   totalMs: number;
   ok: boolean;
@@ -156,16 +159,6 @@ async function writeSttSpeechLog(entry: {
   }
 }
 
-function normalizeMimeType(mimeType: string): string {
-  return mimeType.trim().toLowerCase();
-}
-
-function isSupportedSttMimeType(mimeType: string): boolean {
-  return sarvamRestSttMimeTypes.includes(
-    normalizeMimeType(mimeType) as (typeof sarvamRestSttMimeTypes)[number],
-  );
-}
-
 const RAW_PCM_MIME_TYPES = new Set(['audio/pcm_s16le', 'audio/pcm_l16', 'audio/pcm_raw']);
 
 /** Sarvam requires raw PCM at 16 kHz, mono, 16-bit (signed LE). */
@@ -173,38 +166,47 @@ const PCM_SAMPLE_RATE = 16_000;
 const PCM_CHANNELS = 1;
 const PCM_BYTES_PER_SAMPLE = 2;
 
-async function readAudioDurationSeconds(audio: Buffer, mimeType: string): Promise<number> {
+function isUsableDuration(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value) && value > 0;
+}
+
+async function readParsedAudioDuration(
+  audio: Buffer,
+  mimeType: SttSupportedMimeType,
+  fullScan: boolean,
+): Promise<number | null> {
+  try {
+    const metadata = await parseBuffer(
+      audio,
+      { mimeType, size: audio.length },
+      { duration: fullScan },
+    );
+
+    return isUsableDuration(metadata.format.duration) ? metadata.format.duration : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readAudioDurationSeconds(
+  audio: Buffer,
+  mimeType: SttSupportedMimeType,
+): Promise<number | null> {
   if (RAW_PCM_MIME_TYPES.has(mimeType)) {
     const bytesPerSecond = PCM_SAMPLE_RATE * PCM_CHANNELS * PCM_BYTES_PER_SAMPLE;
     const durationSeconds = audio.length / bytesPerSecond;
 
-    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-      throw new ApiError(400, 'Unable to determine audio duration');
-    }
+    return isUsableDuration(durationSeconds) ? durationSeconds : null;
+  }
 
+  const durationSeconds = await readParsedAudioDuration(audio, mimeType, false);
+
+  if (durationSeconds !== null || audio.length > env.STT_MAX_FILE_SIZE_BYTES) {
     return durationSeconds;
   }
 
-  try {
-    const metadata = await parseBuffer(audio, {
-      mimeType,
-      size: audio.length,
-    });
-
-    const durationSeconds = metadata.format.duration;
-
-    if (!durationSeconds || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-      throw new ApiError(400, 'Unable to determine audio duration');
-    }
-
-    return durationSeconds;
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
-    }
-
-    throw new ApiError(400, 'Unable to determine audio duration');
-  }
+  // MediaRecorder WebM blobs may omit header duration; scan the bounded buffer once before deferring to Sarvam.
+  return readParsedAudioDuration(audio, mimeType, true);
 }
 
 export async function synthesizeSpeech(
@@ -291,17 +293,53 @@ export async function synthesizeSpeech(
 export async function synthesizeSpeechToStoredAudio(
   input: SynthesizeSpeechInput,
 ): Promise<SynthesizeSpeechStoredResult> {
-  const result = await synthesizeSpeech(input);
-  const audioUrl = await saveAudioToStorage(result.audio, result.format);
+  const providerName = resolveTtsProviderName(input.provider);
+  const voice =
+    input.voice ??
+    (providerName === 'sarvam' ? (env.SARVAM_TTS_VOICE ?? '') : KOKORO_DEFAULT_VOICE);
+  const pace = providerName === 'sarvam' ? (input.pace ?? env.SARVAM_TTS_PACE ?? null) : null;
+  const model = providerName === 'sarvam' ? SARVAM_MODEL : 'kokoro';
+  const fileName = buildAudioCacheName({
+    provider: providerName,
+    model,
+    language: input.language,
+    voice,
+    pace,
+    text: input.text,
+  });
+  const cachedAudioUrl = await findCachedAudio(fileName);
+  const chars = input.text.length;
+
+  if (cachedAudioUrl) {
+    return {
+      audioUrl: cachedAudioUrl,
+      provider: providerName,
+      voice,
+      pace: pace ?? undefined,
+      chars,
+      totalMs: 0,
+      durationMs: null,
+      cached: true,
+    };
+  }
+
+  const result = await synthesizeSpeech({
+    ...input,
+    provider: providerName,
+    voice: voice || undefined,
+    pace: pace ?? undefined,
+  });
+  const audioUrl = await saveAudioAs(fileName, result.audio);
 
   return {
     audioUrl,
     provider: result.provider,
-    voice: result.voice,
-    pace: result.pace,
+    voice,
+    pace: pace ?? undefined,
     chars: result.chars,
     totalMs: result.totalMs,
-    durationMs: result.durationMs,
+    durationMs: result.durationMs ?? null,
+    cached: false,
   };
 }
 
@@ -312,19 +350,10 @@ export async function transcribeSpeech(
     throw new ApiError(400, 'audio file is required');
   }
 
-  const normalizedMimeType = normalizeMimeType(input.mimeType);
+  const durationSeconds = await readAudioDurationSeconds(input.audio, input.mimeType);
 
-  if (!isSupportedSttMimeType(normalizedMimeType)) {
-    throw new ApiError(400, 'Unsupported audio format for STT');
-  }
-
-  const durationSeconds = await readAudioDurationSeconds(input.audio, normalizedMimeType);
-
-  if (durationSeconds > env.STT_MAX_DURATION_SECONDS) {
-    throw new ApiError(
-      400,
-      `Sarvam STT REST supports up to ${env.STT_MAX_DURATION_SECONDS} seconds per request`,
-    );
+  if (durationSeconds !== null && durationSeconds > env.STT_MAX_DURATION_SECONDS) {
+    throw new ApiError(400, getSttDurationLimitMessage());
   }
 
   const providerName = resolveSttProviderName(input.provider);
@@ -335,17 +364,19 @@ export async function transcribeSpeech(
   try {
     const output = await provider.transcribe({
       audio: input.audio,
-      mimeType: normalizedMimeType,
+      mimeType: input.mimeType,
       languageCode,
     });
 
     const totalMs = Date.now() - startedAt;
-    const resolvedDurationSeconds = output.durationSeconds ?? durationSeconds;
+    const resolvedDurationSeconds = isUsableDuration(output.durationSeconds)
+      ? output.durationSeconds
+      : durationSeconds;
 
     await writeSttSpeechLog({
       provider: providerName,
       languageCode,
-      mimeType: normalizedMimeType,
+      mimeType: input.mimeType,
       audioSeconds: resolvedDurationSeconds,
       audioBytes: input.audio.length,
       totalMs,
@@ -357,7 +388,8 @@ export async function transcribeSpeech(
         kind: 'stt',
         provider: providerName,
         totalMs,
-        durationSeconds: resolvedDurationSeconds,
+        mimeType: input.mimeType,
+        audioBytes: input.audio.length,
       },
       'Speech provider call completed',
     );
@@ -376,7 +408,7 @@ export async function transcribeSpeech(
     await writeSttSpeechLog({
       provider: providerName,
       languageCode,
-      mimeType: normalizedMimeType,
+      mimeType: input.mimeType,
       audioSeconds: durationSeconds,
       audioBytes: input.audio.length,
       totalMs,
@@ -389,8 +421,8 @@ export async function transcribeSpeech(
         kind: 'stt',
         provider: providerName,
         totalMs,
-        durationSeconds,
-        statusCode: apiError.statusCode,
+        mimeType: input.mimeType,
+        audioBytes: input.audio.length,
       },
       'Speech provider call failed',
     );

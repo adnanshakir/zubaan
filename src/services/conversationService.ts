@@ -1,22 +1,27 @@
 import { isValidObjectId, type Types } from 'mongoose';
-import { env } from '../config/env.js';
 import { Conversation } from '../models/Conversation.js';
 import { Lesson, type RoleplayStep } from '../models/Lesson.js';
 import { buildConversationPrompt } from '../prompts/conversationPrompt.js';
-import { synthesizeSpeech } from './speechService.js';
+import { synthesizeSpeechToStoredAudio } from './speechService.js';
 import type { Level } from '../types/content.js';
-import { saveAudioToStorage } from '../utils/audioStorage.js';
 import { ApiError } from '../utils/ApiError.js';
+import { logger } from '../utils/logger.js';
 import type {
   ConversationStartInput,
   ConversationTurnInput,
 } from '../validators/conversationValidator.js';
-import { generateConversationResponse } from './conversationLlmService.js';
+import {
+  generateConversationResponse,
+  toCorrection,
+  type Correction,
+} from './conversationLlmService.js';
+import { buildConversationFeedback, type ConversationFeedback } from './feedbackService.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
   text: string;
   audioUrl?: string | null;
+  correction?: Correction | null;
   createdAt: Date;
 };
 
@@ -43,42 +48,24 @@ function getRoleplayStep(
   return roleplay;
 }
 
-function toConversationMessage(message: ConversationMessage): ConversationMessage {
+function toConversationMessage(message: ConversationMessage) {
   return {
     role: message.role,
     text: message.text,
     audioUrl: message.audioUrl ?? null,
+    correction: message.role === 'user' ? (message.correction ?? null) : undefined,
     createdAt: message.createdAt,
   };
 }
 
-function getConversationSpeechDefaults() {
-  if (env.TTS_PROVIDER === 'sarvam') {
-    return {
-      voice: env.SARVAM_TTS_VOICE,
-      pace: env.SARVAM_TTS_PACE,
-    };
-  }
-
-  return {
-    voice: undefined,
-    pace: undefined,
-  };
-}
-
 async function synthesizeConversationAudio(text: string): Promise<string | null> {
-  const defaults = getConversationSpeechDefaults();
-
   try {
-    const speech = await synthesizeSpeech({
+    const speech = await synthesizeSpeechToStoredAudio({
       text,
       language: 'en-IN',
-      provider: env.TTS_PROVIDER,
-      voice: defaults.voice,
-      pace: defaults.pace,
     });
 
-    return await saveAudioToStorage(speech.audio, speech.format);
+    return speech.audioUrl;
   } catch {
     return null;
   }
@@ -232,7 +219,14 @@ export async function takeConversationTurn(
     throw error;
   }
 
+  // Compute correction from LLM output before saving
+  const correction = toCorrection(output, input.text);
+
   const aiAudioUrl = await synthesizeConversationAudio(output.reply);
+
+  // Find the user message _id that was just pushed so we can attach
+  // the correction to it with arrayFilters in one save.
+  const lastUserMsg = [...updatedConversation.messages].reverse().find((m) => m.role === 'user');
 
   updatedConversation.messages.push({
     role: 'ai',
@@ -249,6 +243,25 @@ export async function takeConversationTurn(
     updatedConversation.durationSec = durationSince(updatedConversation.startedAt);
   }
 
+  // Attach correction to the user message and save everything atomically.
+  // Using arrayFilters targets the specific user message by _id.
+  if (correction && lastUserMsg) {
+    // Set correction on the in-memory document so the save persists it
+    lastUserMsg.correction = correction;
+  }
+
+  let feedback: ConversationFeedback | null = null;
+  if (endConversation) {
+    try {
+      feedback = await buildConversationFeedback(updatedConversation);
+    } catch (error) {
+      logger.warn(
+        { conversationId, error },
+        'Conversation completed but feedback could not be built',
+      );
+    }
+  }
+
   await updatedConversation.save();
 
   return {
@@ -256,6 +269,8 @@ export async function takeConversationTurn(
     audioUrl: aiAudioUrl,
     endConversation,
     turnsRemaining,
+    correction,
+    feedback,
   };
 }
 
@@ -266,11 +281,15 @@ export async function endConversation(user: ConversationUser, conversationId: st
     throw new ApiError(409, 'Conversation is not active');
   }
 
+  let feedback: ConversationFeedback;
   if (conversation.status === 'active') {
     conversation.status = 'completed';
     conversation.endedAt = new Date();
     conversation.durationSec = durationSince(conversation.startedAt);
+    feedback = await buildConversationFeedback(conversation);
     await conversation.save();
+  } else {
+    feedback = await buildConversationFeedback(conversation);
   }
 
   return {
@@ -278,11 +297,14 @@ export async function endConversation(user: ConversationUser, conversationId: st
     status: conversation.status,
     durationSec: conversation.durationSec ?? 0,
     userTurns: countUserTurns(conversation.messages),
+    feedback,
   };
 }
 
 export async function getConversation(user: ConversationUser, conversationId: string) {
   const conversation = await findOwnedConversation(user._id, conversationId);
+  const feedback =
+    conversation.status === 'completed' ? await buildConversationFeedback(conversation) : null;
 
   return {
     conversationId: conversation._id.toString(),
@@ -292,5 +314,6 @@ export async function getConversation(user: ConversationUser, conversationId: st
     startedAt: conversation.startedAt,
     endedAt: conversation.endedAt,
     durationSec: conversation.durationSec,
+    feedback,
   };
 }

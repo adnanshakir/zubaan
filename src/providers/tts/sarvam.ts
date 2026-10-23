@@ -36,7 +36,7 @@ type SarvamTtsSuccessResponse = {
 
 const SARVAM_TTS_URL = 'https://api.sarvam.ai/text-to-speech';
 const SARVAM_MAX_TTS_CHARS = 2500;
-const SARVAM_MODEL = 'bulbul:v3';
+export const SARVAM_MODEL = 'bulbul:v3';
 
 const SARVAM_LANGUAGE_MAP: Record<TtsLanguage, string> = {
   'en-IN': 'en-IN',

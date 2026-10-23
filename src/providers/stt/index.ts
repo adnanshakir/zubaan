@@ -2,7 +2,7 @@ import { env } from '../../config/env.js';
 import { sarvamSttProvider } from './sarvam.js';
 
 export const sttProviderNames = ['sarvam'] as const;
-export const sarvamRestSttMimeTypes = [
+export const sttAllowedMimeTypes = [
   'audio/mpeg',
   'audio/mp3',
   'audio/mpeg3',
@@ -28,6 +28,21 @@ export const sarvamRestSttMimeTypes = [
   'audio/pcm_l16',
   'audio/pcm_raw',
 ] as const;
+
+export type SttSupportedMimeType = (typeof sttAllowedMimeTypes)[number];
+
+const MIME_TYPE_PATTERN = /^[!#$%&'*+.^_`|~0-9a-z-]+\/[!#$%&'*+.^_`|~0-9a-z-]+$/;
+
+/** Browser uploads often add codec parameters, which are not part of the media type. */
+export function normalizeMimeType(raw: string | undefined): string | null {
+  const mimeType = raw?.split(';', 1)[0]?.trim().toLowerCase();
+
+  return mimeType && MIME_TYPE_PATTERN.test(mimeType) ? mimeType : null;
+}
+
+export function isSupportedSttMimeType(mimeType: string | null): mimeType is SttSupportedMimeType {
+  return mimeType !== null && (sttAllowedMimeTypes as readonly string[]).includes(mimeType);
+}
 
 export const sttLanguageCodes = [
   'unknown',
@@ -61,7 +76,7 @@ export type SttLanguageCode = (typeof sttLanguageCodes)[number];
 
 export type SttTranscribeInput = {
   audio: Buffer;
-  mimeType: string;
+  mimeType: SttSupportedMimeType;
   languageCode?: SttLanguageCode;
 };
 

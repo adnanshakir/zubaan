@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { env } from '../config/env.js';
 import { synthesizeTts, transcribeStt } from '../controllers/speechController.js';
 import { attachUser } from '../middlewares/attachUser.js';
-import { sarvamRestSttMimeTypes } from '../providers/stt/index.js';
+import { isSupportedSttMimeType, normalizeMimeType } from '../providers/stt/index.js';
 import { validate } from '../middlewares/validate.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -17,13 +17,14 @@ const sttUpload = multer({
     fileSize: env.STT_MAX_FILE_SIZE_BYTES,
   },
   fileFilter: (_req, file, cb) => {
-    const mimeType = file.mimetype.toLowerCase();
+    const mimeType = normalizeMimeType(file.mimetype);
 
-    if (!sarvamRestSttMimeTypes.includes(mimeType as (typeof sarvamRestSttMimeTypes)[number])) {
+    if (!isSupportedSttMimeType(mimeType)) {
       cb(new ApiError(400, 'Unsupported audio format for STT'));
       return;
     }
 
+    file.mimetype = mimeType;
     cb(null, true);
   },
 });

@@ -1,5 +1,26 @@
 import { model, Schema, type InferSchemaType } from 'mongoose';
 
+const correctionSchema = new Schema(
+  {
+    corrected: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    explanation: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    type: {
+      type: String,
+      enum: ['grammar', 'tense', 'preposition', 'word_choice', 'other'],
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
 const conversationMessageSchema = new Schema(
   {
     role: {
@@ -17,13 +38,18 @@ const conversationMessageSchema = new Schema(
       trim: true,
       default: null,
     },
+    correction: {
+      type: correctionSchema,
+      default: null,
+    },
     createdAt: {
       type: Date,
       default: Date.now,
       required: true,
     },
   },
-  { _id: false },
+  // Enable _id so arrayFilters can target a specific message
+  { _id: true },
 );
 
 const conversationSchema = new Schema(

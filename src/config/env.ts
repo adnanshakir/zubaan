@@ -85,3 +85,7 @@ if (!result.success) {
 }
 
 export const env = result.data;
+
+export function getSttDurationLimitMessage(): string {
+  return `Sarvam STT REST supports up to ${env.STT_MAX_DURATION_SECONDS} seconds per request`;
+}

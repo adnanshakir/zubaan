@@ -1,6 +1,7 @@
 import { getLlmProvider } from '../providers/llm/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { logger } from '../utils/logger.js';
+import { normalizeText, type MistakeType } from '../utils/text.js';
 import {
   conversationLlmOutputSchema,
   type ConversationLlmOutput,
@@ -10,6 +11,28 @@ type ConversationLlmInput = {
   system: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
 };
+
+export interface Correction {
+  corrected: string;
+  explanation: string;
+  type: MistakeType;
+}
+
+// A correction must be a rewrite of THIS message. Small models sometimes
+// re-emit the correction for an earlier turn; that shares no words with the
+// current message, so it is dropped.
+const MIN_WORD_OVERLAP = 0.3;
+
+function wordOverlap(original: string, corrected: string): number {
+  const originalWords = new Set(normalizeText(original).split(' ').filter(Boolean));
+  if (originalWords.size === 0) return 0;
+  const correctedWords = new Set(normalizeText(corrected).split(' ').filter(Boolean));
+  let shared = 0;
+  for (const word of originalWords) {
+    if (correctedWords.has(word)) shared += 1;
+  }
+  return shared / originalWords.size;
+}
 
 function stripMarkdownFences(response: string): string {
   return response
@@ -28,6 +51,36 @@ function parseLlmOutput(response: string): ConversationLlmOutput {
   }
 
   return result.data;
+}
+
+/**
+ * Extract a Correction from the LLM output, or null when there is no
+ * real mistake. Guards against LLMs that flag a mistake but return the
+ * original text unchanged (or differ only by case/punctuation).
+ */
+export function toCorrection(
+  o: {
+    hasMistake: boolean;
+    corrected: string;
+    explanation: string;
+    mistakeType: MistakeType;
+  },
+  original: string,
+): Correction | null {
+  const corrected = o.corrected.trim();
+  const explanation = o.explanation.trim();
+  if (!o.hasMistake || !corrected || !explanation) return null;
+
+  // Guard: LLMs sometimes flag a mistake but return the input unchanged,
+  // or differ only by case/punctuation (STT artifacts, not errors).
+  if (normalizeText(corrected) === normalizeText(original)) return null;
+  if (wordOverlap(original, corrected) < MIN_WORD_OVERLAP) return null;
+
+  return {
+    corrected,
+    explanation,
+    type: o.mistakeType,
+  };
 }
 
 export async function generateConversationResponse(

@@ -28,8 +28,23 @@ const conversationResponseJsonSchema = {
     endConversation: {
       type: 'boolean',
     },
+    hasMistake: {
+      type: 'boolean',
+    },
+    corrected: {
+      type: 'string',
+      maxLength: 500,
+    },
+    explanation: {
+      type: 'string',
+      maxLength: 160,
+    },
+    mistakeType: {
+      type: 'string',
+      enum: ['grammar', 'tense', 'preposition', 'word_choice', 'other'],
+    },
   },
-  required: ['reply', 'endConversation'],
+  required: ['reply', 'endConversation', 'hasMistake', 'corrected', 'explanation', 'mistakeType'],
 };
 
 function getSarvamConfiguration(): { apiKey: string; model: string } {
