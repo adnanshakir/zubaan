@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-23
+> **Last verified against code**: 2026-10-24
 
 ---
 
@@ -125,8 +125,10 @@ exists in code.
 
 ### 2.6 Request Validation
 
-Every request is validated with Zod schemas via the `validate` middleware.
-The middleware parses `{ body, params, query }` against the schema.
+Requests that use validation middleware are validated with Zod schemas. The
+middleware parses `{ body, params, query }` against the schema; routes without
+validation middleware (such as health, home, and mistake summary) do not run a
+Zod validation step.
 
 On validation failure, the response is:
 
@@ -769,7 +771,7 @@ reach a TTS provider.
 | ------------ | ----------------- | ---------------------------------------------- |
 | `audioUrl`   | `string`          | Relative path to the stored audio file         |
 | `provider`   | `string`          | Provider used (`"kokoro"` or `"sarvam"`)       |
-| `voice`      | `string \| null`  | Voice used, or null if not specified            |
+| `voice`      | `string`          | Effective voice used, including the provider default when omitted |
 | `pace`       | `number \| null`  | Pace used, or null if not specified             |
 | `chars`      | `number`          | Character count of input text                  |
 | `totalMs`    | `number`          | Wall-clock time of the provider call (ms)      |
@@ -937,6 +939,13 @@ Lists mistakes newest first using cursor pagination.
 Pass the previous response's `nextBefore` as `before` to fetch the next page;
 `null` means there are no more pages.
 
+**Errors**:
+
+| Status | Condition |
+| ------ | --------- |
+| 400    | Invalid query or cursor |
+| 401    | Missing or invalid `x-user-id` |
+
 #### `GET /api/mistakes/summary`
 
 Returns the authenticated user's total mistakes and counts by mistake type.
@@ -960,7 +969,6 @@ Returns the authenticated user's total mistakes and counts by mistake type.
 
 | Status | Condition |
 | ------ | --------- |
-| 400    | Invalid query or cursor |
 | 401    | Missing or invalid `x-user-id` |
 
 **Example curl**:
@@ -1378,7 +1386,7 @@ interface ConversationFeedback {
 interface TtsResponse {
   audioUrl: string;
   provider: TtsProviderName;
-  voice: string | null;
+  voice: string;
   pace: number | null;
   chars: number;
   totalMs: number;
@@ -1517,7 +1525,7 @@ the conversation.
    - **Server** calls TTS to synthesize AI reply
    - **Server** appends AI message
    - Each turn with a non-null correction also stores a `Mistake` for the user.
-   - Returns `{ reply, audioUrl, endConversation, turnsRemaining, correction }`
+   - Returns `{ reply, audioUrl, endConversation, turnsRemaining, correction, feedback }`
 
 6. **Client** plays the AI reply audio
 
@@ -1526,7 +1534,7 @@ the conversation.
 
 8. (Optional) **Client** → `POST /api/conversations/:id/end`
    - Manually ends the conversation early
-   - Returns `{ conversationId, status, durationSec, userTurns }`
+   - Returns `{ conversationId, status, durationSec, userTurns, feedback }`
 
 9. (Optional) **Client** → `GET /api/conversations/:id`
    - Retrieve the full conversation with all messages
@@ -1557,13 +1565,13 @@ sequenceDiagram
         LLM-->>S: {reply, endConversation}
         S->>TTS: synthesize(reply)
         TTS-->>S: audio buffer
-        S-->>C: 200 {reply, audioUrl, endConversation, turnsRemaining, correction}
+        S-->>C: 200 {reply, audioUrl, endConversation, turnsRemaining, correction, feedback}
         Note over C: Play AI reply audio
     end
 
     opt Manual end
         C->>S: POST /api/conversations/:id/end
-        S-->>C: 200 {conversationId, status, durationSec, userTurns}
+        S-->>C: 200 {conversationId, status, durationSec, userTurns, feedback}
     end
 ```
 
