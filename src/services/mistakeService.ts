@@ -1,6 +1,5 @@
 import { Types } from 'mongoose';
 import { Mistake } from '../models/Mistake.js';
-import { logger } from '../utils/logger.js';
 import { type MistakeType } from '../utils/text.js';
 import type { Correction } from './conversationLlmService.js';
 
@@ -14,19 +13,15 @@ export async function recordMistake(input: {
   original: string;
   correction: Correction;
 }): Promise<void> {
-  try {
-    await Mistake.create({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      lessonId: input.lessonId,
-      original: input.original,
-      corrected: input.correction.corrected,
-      explanation: input.correction.explanation,
-      type: input.correction.type,
-    });
-  } catch (error) {
-    logger.warn({ error }, 'Failed to persist mistake');
-  }
+  await Mistake.create({
+    userId: input.userId,
+    conversationId: input.conversationId,
+    lessonId: input.lessonId,
+    original: input.original,
+    corrected: input.correction.corrected,
+    explanation: input.correction.explanation,
+    type: input.correction.type,
+  });
 }
 
 export async function listMistakes(

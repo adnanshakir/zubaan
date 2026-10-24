@@ -222,15 +222,6 @@ export async function takeConversationTurn(
 
   // Compute correction from LLM output before saving
   const correction = toCorrection(output, input.text);
-  if (correction) {
-    await recordMistake({
-      userId: user._id,
-      conversationId: existingConversation._id,
-      lessonId: lesson._id,
-      original: input.text,
-      correction,
-    });
-  }
 
   const aiAudioUrl = await synthesizeConversationAudio(output.reply);
 
@@ -273,6 +264,16 @@ export async function takeConversationTurn(
   }
 
   await updatedConversation.save();
+
+  if (correction) {
+    await recordMistake({
+      userId: user._id,
+      conversationId: existingConversation._id,
+      lessonId: lesson._id,
+      original: input.text,
+      correction,
+    });
+  }
 
   return {
     reply: output.reply,

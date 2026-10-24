@@ -932,7 +932,7 @@ Lists mistakes newest first using cursor pagination.
       "createdAt": "2026-10-23T12:00:00.000Z"
     }
   ],
-  "nextBefore": "665f1a2b3c4d5e6f7a8b9c0c"
+  "nextBefore": "665f1a2b3c4d5e6f7a8b9c0d"
 }
 ```
 
