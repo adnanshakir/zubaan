@@ -189,7 +189,7 @@ export async function takeConversationTurn(
     {
       $push: { messages: userMessage },
     },
-    { new: true },
+    { returnDocument: 'after' },
   );
 
   if (!updatedConversation) {
