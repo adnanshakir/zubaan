@@ -20,6 +20,7 @@ export const synthesizeTts: RequestHandler = async (_req, res) => {
     chars: result.chars,
     totalMs: result.totalMs,
     durationMs: result.durationMs,
+    cached: result.cached,
   });
 };
 

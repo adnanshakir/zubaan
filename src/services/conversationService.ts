@@ -16,6 +16,7 @@ import {
   type Correction,
 } from './conversationLlmService.js';
 import { buildConversationFeedback, type ConversationFeedback } from './feedbackService.js';
+import { recordMistake } from './mistakeService.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
@@ -188,7 +189,7 @@ export async function takeConversationTurn(
     {
       $push: { messages: userMessage },
     },
-    { new: true },
+    { returnDocument: 'after' },
   );
 
   if (!updatedConversation) {
@@ -263,6 +264,16 @@ export async function takeConversationTurn(
   }
 
   await updatedConversation.save();
+
+  if (correction) {
+    await recordMistake({
+      userId: user._id,
+      conversationId: existingConversation._id,
+      lessonId: lesson._id,
+      original: input.text,
+      correction,
+    });
+  }
 
   return {
     reply: output.reply,

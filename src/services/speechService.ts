@@ -20,6 +20,8 @@ import { ApiError } from '../utils/ApiError.js';
 import { buildAudioCacheName, findCachedAudio, saveAudioAs } from '../utils/audioStorage.js';
 import { logger } from '../utils/logger.js';
 
+const SARVAM_DEFAULT_VOICE = 'shubh';
+
 export type SynthesizeSpeechInput = {
   text: string;
   language: TtsLanguage;
@@ -296,7 +298,9 @@ export async function synthesizeSpeechToStoredAudio(
   const providerName = resolveTtsProviderName(input.provider);
   const voice =
     input.voice ??
-    (providerName === 'sarvam' ? (env.SARVAM_TTS_VOICE ?? '') : KOKORO_DEFAULT_VOICE);
+    (providerName === 'sarvam'
+      ? (env.SARVAM_TTS_VOICE ?? SARVAM_DEFAULT_VOICE)
+      : KOKORO_DEFAULT_VOICE);
   const pace = providerName === 'sarvam' ? (input.pace ?? env.SARVAM_TTS_PACE ?? null) : null;
   const model = providerName === 'sarvam' ? SARVAM_MODEL : 'kokoro';
   const fileName = buildAudioCacheName({
@@ -326,7 +330,7 @@ export async function synthesizeSpeechToStoredAudio(
   const result = await synthesizeSpeech({
     ...input,
     provider: providerName,
-    voice: voice || undefined,
+    voice,
     pace: pace ?? undefined,
   });
   const audioUrl = await saveAudioAs(fileName, result.audio);
