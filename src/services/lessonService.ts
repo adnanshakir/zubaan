@@ -102,6 +102,22 @@ export async function getLessonById(id: string) {
 
   return {
     ...toLessonListItem(lesson),
-    steps: lesson.steps,
+    steps: lesson.steps.map((step) => ({
+      order: step.order,
+      type: step.type,
+      phrases: step.phrases,
+      phraseIndexes: step.phraseIndexes,
+      roleplay: step.roleplay
+        ? {
+            aiRole: step.roleplay.aiRole,
+            userRole: step.roleplay.userRole,
+            situation: step.roleplay.situation,
+            goal: step.roleplay.goal,
+            openingLine: step.roleplay.openingLine,
+            maxTurns: step.roleplay.maxTurns,
+            targetPhrases: step.roleplay.targetPhrases,
+          }
+        : undefined,
+    })),
   };
 }

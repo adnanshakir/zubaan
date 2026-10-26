@@ -1,4 +1,5 @@
 import { getLlmProvider } from '../providers/llm/index.js';
+import type { LlmProviderInput } from '../providers/llm/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import { logger } from '../utils/logger.js';
 import { normalizeText, type MistakeType } from '../utils/text.js';
@@ -7,10 +8,7 @@ import {
   type ConversationLlmOutput,
 } from '../validators/llmOutput.js';
 
-type ConversationLlmInput = {
-  system: string;
-  messages: { role: 'user' | 'assistant'; content: string }[];
-};
+type ConversationLlmInput = LlmProviderInput;
 
 export interface Correction {
   corrected: string;

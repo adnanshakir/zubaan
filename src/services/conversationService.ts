@@ -214,6 +214,7 @@ export async function takeConversationTurn(
         turnsRemaining,
       }),
       messages: toLlmMessages(updatedConversation.messages),
+      scriptedReplies: roleplay.mockReplies,
     });
   } catch (error) {
     await Conversation.updateOne({ _id: conversationId }, { $pop: { messages: 1 } });

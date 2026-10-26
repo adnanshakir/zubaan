@@ -21,6 +21,7 @@ export type RoleplayStep = {
   openingLine: string;
   maxTurns: number;
   targetPhrases: string[];
+  mockReplies?: string[];
 };
 
 export type LessonStep = {
@@ -88,6 +89,9 @@ const roleplaySchema = new Schema(
     targetPhrases: {
       type: [String],
       required: true,
+    },
+    mockReplies: {
+      type: [String],
     },
   },
   { _id: false },
