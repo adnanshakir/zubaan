@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-26
+> **Last verified against code**: 2026-10-27
 
 ---
 
@@ -351,7 +351,9 @@ curl http://localhost:5000/api/home \
     "category": "daily",
     "level": "beginner",
     "objective": "Start a friendly conversation with a new neighbour.",
-    "estimatedMinutes": 5
+    "estimatedMinutes": 5,
+    "sentenceCount": 6,
+    "exerciseCount": 12
   }
 ]
 ```
@@ -378,7 +380,7 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
 
 | Item           | Value                                         |
 | -------------- | --------------------------------------------- |
-| **Purpose**    | Get full lesson detail including steps         |
+| **Purpose**    | Get full lesson detail including stages and chat |
 | **Auth**       | Yes — `x-user-id` header                      |
 
 **Path Parameters**:
@@ -398,46 +400,35 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
   "level": "beginner",
   "objective": "Start a friendly conversation with a new neighbour.",
   "estimatedMinutes": 5,
-  "steps": [
+  "sentences": [
     {
-      "order": 1,
-      "type": "learn",
-      "phrases": [
-        {
-          "text": "Hi, I am your new neighbour.",
-          "hints": { "hi": "नमस्ते, मैं आपका नया पड़ोसी हूँ।" },
-          "tip": "Say \"neighbour\" as NAY-bur. The \"gh\" is silent.",
-          "chunks": ["Hi,", "I am", "your new", "neighbour."]
-        }
-      ]
-    },
-    {
-      "order": 2,
-      "type": "repeat",
-      "phraseIndexes": [0, 1, 2]
-    },
-    {
-      "order": 3,
-      "type": "roleplay",
-      "roleplay": {
-        "aiRole": "Neighbour",
-        "userRole": "New resident",
-        "situation": "You meet a neighbour outside your apartment building.",
-        "goal": "Introduce yourself and make a friendly first impression.",
-        "openingLine": "Hello! I have not seen you here before. Are you new to the building?",
-        "maxTurns": 4,
-        "targetPhrases": ["Hi, I am your new neighbour."],
-        "turns": [
-          {
-            "ai": "Hello! I don't think we've met. Are you new in the building?",
-            "expect": "Hi, I am your new neighbour.",
-            "hint": { "en": "Greet her and say you are her new neighbour.", "hi": "नमस्ते कहें..." }
-          }
-        ],
-        "closingLine": "It's just around the corner. Welcome to the building!"
-      }
+      "id": "s1",
+      "text": "Hi, I am your new neighbour.",
+      "hi": "नमस्ते, मैं आपका नया पड़ोसी हूँ।",
+      "tip": "Say \"neighbour\" as NAY-bur.",
+      "chunks": ["Hi,", "I am", "your new", "neighbour."]
     }
-  ]
+  ],
+  "stages": [
+    {
+      "id": "words",
+      "title": "Learn the words",
+      "intro": "Meet the words you will need.",
+      "exercises": [{ "id": "w1", "type": "match_pairs", "prompt": "Match each word.", "pairs": [{ "en": "neighbour", "hi": "पड़ोसी" }] }]
+    }
+  ],
+  "chat": {
+    "aiRole": "Neighbour",
+    "userRole": "New resident",
+    "situation": "You meet outside your building.",
+    "goal": "Introduce yourself.",
+    "turns": [{
+      "ai": "Are you new in the building?",
+      "sentenceId": "s1",
+      "hint": { "en": "Greet your neighbour.", "hi": "नमस्ते कहें।" }
+    }],
+    "closingLine": "Welcome to the building!"
+  }
 }
 ```
 
@@ -463,7 +454,7 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 
 | Item           | Value                                                |
 | -------------- | ---------------------------------------------------- |
-| **Purpose**    | Start a new conversation from a lesson's roleplay    |
+| **Purpose**    | Start a new conversation from a lesson's chat       |
 | **Auth**       | Yes — `x-user-id` header                             |
 
 **Request Body** (`application/json`):
@@ -487,7 +478,7 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
       ,"turnIndex": 0
     }
   ],
-  "turnsRemaining": 4
+  "turnsRemaining": 18
 }
 ```
 
@@ -498,13 +489,13 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 | Status | When                            | Message                          |
 | ------ | ------------------------------- | -------------------------------- |
 | 400    | Validation fails                | Zod issue message                |
-| 400    | Lesson has no roleplay step     | `"Lesson has no roleplay step"`  |
+| 400    | Lesson has no conversation turns | `"Lesson has no conversation turns"` |
 | 401    | Missing/invalid `x-user-id`    | `"Unauthorized"`                 |
 | 404    | Lesson not found / invalid ID  | `"Lesson not found"`             |
 
 **Side Effects**:
 - Creates a `Conversation` document with status `"active"`.
-- The AI opening message is the lesson's `roleplay.openingLine`.
+- The AI opening message is `chat.turns[0].ai`.
 - TTS is called to synthesize the opening line; audio is saved to disk.
 - A `SpeechLog` document is created for the TTS call.
 
@@ -583,7 +574,7 @@ When `endConversation` is `true`, the conversation status changes to
 
 **Side Effects**:
 - Appends the user message to `conversation.messages` (atomic update with
-  guard against exceeding `maxTurns`).
+  guard against exceeding `chat.turns.length * 3`).
 - Scripted lessons compare the answer with the current turn target, return
   progress and correction fields, and never call the LLM.
 - Calls the LLM provider to generate a response (validated JSON) which
@@ -1027,50 +1018,42 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `level`            | string         | Yes      | Enum: `Level`                 |
 | `objective`        | string         | Yes      |                               |
 | `estimatedMinutes` | number         | Yes      |                               |
-| `steps`            | `LessonStep[]` | Yes      | Embedded array (see below)    |
+| `sentenceCount` | number | Yes | List response count |
+| `exerciseCount` | number | Yes | List response count |
+| `sentences`        | `Sentence[]`   | Yes      | Learner sentence source        |
+| `stages`           | `Stage[]`      | Yes      | Embedded array (see below)    |
+| `chat`             | `Chat`         | Yes      | Scripted conversation          |
 | `createdAt`        | Date           | Auto     |                               |
 | `updatedAt`        | Date           | Auto     |                               |
 
-**LessonStep**:
+**Sentence**:
 
-| Field          | Type              | Required | Notes                              |
-| -------------- | ----------------- | -------- | ---------------------------------- |
-| `order`        | number            | Yes      | Step sequence number               |
-| `type`         | string            | Yes      | `"learn"` \| `"repeat"` \| `"roleplay"` |
-| `phrases`      | `LessonPhrase[]`  | No       | Present on `learn` steps           |
-| `phraseIndexes`| `number[]`        | No       | Present on `repeat` steps          |
-| `roleplay`     | `RoleplayStep`    | No       | Present on `roleplay` steps        |
+| Field | Type | Required | Notes |
+| ----- | ---- | -------- | ----- |
+| `id` | string | Yes | Referenced by chat turns and speak exercises |
+| `text` | string | Yes | Sentence the learner says |
+| `hi` | string | Yes | Hindi meaning |
+| `tip` | string | Yes | Pronunciation or grammar tip |
+| `chunks` | string[] | Yes | Joins to `text` |
 
-**LessonPhrase**:
+**Stage**:
 
-| Field  | Type                                | Required | Notes                       |
-| ------ | ----------------------------------- | -------- | --------------------------- |
-| `text` | string                              | Yes      |                             |
-| `hints`| `Record<Language, string>` (partial)| No       | Keyed by language code      |
-| `tip`  | string                              | No       |                             |
-| `chunks`| `string[]`                          | No       | Phrase chunks for guided practice |
+`{ id: "words" | "sentences"; title: string; intro: string; exercises: Exercise[] }`.
+Exercises are `mcq`, `gap`, `listen_pick`, `match_pairs`, `order_words`, or
+`speak`; see `docs/LESSON_CONTENT.md` for every field. Exercises include
+`correct` in lesson detail responses.
 
-**RoleplayStep**:
+**Chat**:
 
-| Field           | Type       | Required |
-| --------------- | ---------- | -------- |
-| `aiRole`        | string     | Yes      |
-| `userRole`      | string     | Yes      |
-| `situation`     | string     | Yes      |
-| `goal`          | string     | Yes      |
-| `openingLine`   | string     | Yes      |
-| `maxTurns`      | number     | Yes      |
-| `targetPhrases` | `string[]` | Yes      |
-| `turns`          | `ScriptedRoleplayTurn[]` | No | Present for scripted lessons |
-| `closingLine`    | string     | No       | Final scripted response |
+`Chat` has `aiRole`, `userRole`, `situation`, `goal`, `turns`, and `closingLine`.
+Each detail response turn contains only `ai`, `sentenceId`, and `hint`.
+Authoring-only fields `repeat`, `alternatives`, and `knownMistakes` are not
+exposed.
 
-**ScriptedRoleplayTurn**:
+**Scripted chat authoring**:
 
-| Field | Type | Required |
-| ----- | ---- | -------- |
-| `ai` | string | Yes |
-| `expect` | string | Yes |
-| `hint` | `{ en: string; hi: string }` | Yes |
+Each turn also has `repeat`, optional `alternatives`, and optional
+`knownMistakes`; `sentenceId` resolves the expected text from `sentences`.
 
 ### 4.3 Conversation
 
@@ -1300,42 +1283,70 @@ interface LessonListItem {
   level: Level;
   objective: string;
   estimatedMinutes: number;
+  sentenceCount: number;
+  exerciseCount: number;
 }
 
 interface LessonDetail extends LessonListItem {
-  steps: LessonStep[];
+  sentences: Sentence[];
+  stages: Stage[];
+  chat: Chat;
 }
 
-interface LessonStep {
-  order: number;
-  type: "learn" | "repeat" | "roleplay";
-  phrases?: LessonPhrase[];
-  phraseIndexes?: number[];
-  roleplay?: RoleplayStep;
-}
-
-interface LessonPhrase {
+interface Sentence {
+  id: string;
   text: string;
-  hints: Partial<Record<Language, string>>;
-  tip?: string | null;
-  chunks?: string[];
+  hi: string;
+  tip: string;
+  chunks: string[];
 }
 
-interface RoleplayStep {
+interface Stage {
+  id: "words" | "sentences";
+  title: string;
+  intro: string;
+  exercises: Exercise[];
+}
+
+type Exercise = McqExercise | GapExercise | ListenPickExercise |
+  MatchPairsExercise | OrderWordsExercise | SpeakExercise;
+
+interface McqExercise {
+  id: string; type: "mcq"; prompt: string; promptHi?: string;
+  options: string[]; correct: string; explanation: string;
+}
+interface GapExercise {
+  id: string; type: "gap"; sentence: string; hi: string;
+  options: string[]; correct: string; explanation: string;
+}
+interface ListenPickExercise {
+  id: string; type: "listen_pick"; prompt: string; text: string;
+  options: string[]; correct: string; explanation: string;
+}
+interface MatchPairsExercise {
+  id: string; type: "match_pairs"; prompt: string;
+  pairs: { en: string; hi: string }[];
+}
+interface OrderWordsExercise {
+  id: string; type: "order_words"; promptHi: string; answer: string;
+  extraWords?: string[]; explanation: string;
+}
+interface SpeakExercise {
+  id: string; type: "speak"; sentenceId: string;
+}
+
+interface Chat {
   aiRole: string;
   userRole: string;
   situation: string;
   goal: string;
-  openingLine: string;
-  maxTurns: number;
-  targetPhrases: string[];
-  turns?: ScriptedRoleplayTurn[];
-  closingLine?: string;
+  turns: ChatTurn[];
+  closingLine: string;
 }
 
-interface ScriptedRoleplayTurn {
+interface ChatTurn {
   ai: string;
-  expect: string;
+  sentenceId: string;
   hint: { en: string; hi: string };
 }
 
@@ -1532,7 +1543,7 @@ sequenceDiagram
    with `x-user-id`
 2. **Server** → `200 [LessonListItem, ...]`
 3. **Client** → `GET /api/lessons/:id` with `x-user-id` to load full lesson
-   detail (steps, phrases, roleplay).
+   detail (sentences, stages, chat).
 
 ```mermaid
 sequenceDiagram
@@ -1558,7 +1569,7 @@ the conversation.
 **Sequence**:
 
 1. **Client** → `POST /api/conversations` with `{ lessonId }`
-   - **Server** finds the lesson's roleplay step
+   - **Server** loads the lesson's chat
    - **Server** calls TTS to synthesize the AI opening line
    - **Server** creates a `Conversation` document
    - Returns `{ conversationId, status, messages, turnsRemaining }`
@@ -1572,7 +1583,7 @@ the conversation.
    - Returns `{ text, ... }`
 
 5. **Client** → `POST /api/conversations/:id/turns` with `{ text }`
-   - **Server** appends user message (atomic, guarded by maxTurns)
+   - **Server** appends user message (atomic, guarded by the chat turn limit)
    - **Server** calls LLM to generate AI reply
    - **Server** calls TTS to synthesize AI reply
    - **Server** appends AI message
@@ -1600,7 +1611,7 @@ sequenceDiagram
     participant STT as STT Provider
 
     C->>S: POST /api/conversations<br/>{lessonId}
-    S->>TTS: synthesize(openingLine)
+    S->>TTS: synthesize(chat.turns[0].ai)
     TTS-->>S: audio buffer
     S-->>C: 201 {conversationId, messages[ai], turnsRemaining}
     Note over C: Play AI opening audio
@@ -1787,17 +1798,18 @@ All environment variable **names** (never values):
 
 | Constraint                      | Value                          |
 | ------------------------------- | ------------------------------ |
-| Max user turns per conversation | `roleplay.maxTurns` (per lesson; typically 4–5) |
+| Max user turns per conversation | `chat.turns.length * 3` |
 | Scripted lesson attempts per turn | 3; after the third off-target answer the script moves on |
 | LLM context window              | Last 10 messages (sliding window) |
 
 ### 7.5 Scripted lessons
 
-Lessons whose roleplay contains `turns` are deterministic scripted
-conversations. The server compares each answer with the current `expect`
-sentence, provides up to three attempts, and advances after the third
-off-target answer. These turns do not call the LLM; TTS is still generated for
-the scripted AI reply.
+Lessons with chat turns are deterministic scripted conversations. The server
+looks up each turn's sentence by `sentenceId`, accepts alternatives as exact,
+uses known mistakes before word-diff explanations, and provides up to three
+attempts. An answer matching another turn is deferred with
+`Good sentence, but not yet.` These turns do not call the LLM; TTS is still
+generated for the scripted AI reply.
 
 ---
 

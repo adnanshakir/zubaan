@@ -1,8 +1,12 @@
-import type { RoleplayStep } from '../models/Lesson.js';
 import type { Level } from '../types/content.js';
 
 type BuildConversationPromptInput = {
-  roleplay: RoleplayStep;
+  chat: {
+    aiRole: string;
+    userRole: string;
+    situation: string;
+    goal: string;
+  };
   user: {
     level: Level;
     name?: string;
@@ -19,7 +23,7 @@ function levelGuidance(level: Level): string {
 }
 
 export function buildConversationPrompt({
-  roleplay,
+  chat,
   user,
   turnsRemaining,
 }: BuildConversationPromptInput): string {
@@ -29,10 +33,10 @@ export function buildConversationPrompt({
 
   return [
     'You are leading an English speaking roleplay for a learner.',
-    `Your role: ${roleplay.aiRole}`,
-    `Learner role: ${roleplay.userRole}`,
-    `Situation: ${roleplay.situation}`,
-    `Goal: ${roleplay.goal}`,
+    `Your role: ${chat.aiRole}`,
+    `Learner role: ${chat.userRole}`,
+    `Situation: ${chat.situation}`,
+    `Goal: ${chat.goal}`,
     learnerName,
     `Learner level: ${user.level}. ${levelGuidance(user.level)}`,
     `Turns remaining after this learner message: ${turnsRemaining}.`,

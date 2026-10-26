@@ -1,6 +1,6 @@
 import { isValidObjectId, type Types } from 'mongoose';
 import { Conversation } from '../models/Conversation.js';
-import { Lesson, type RoleplayStep } from '../models/Lesson.js';
+import { Lesson } from '../models/Lesson.js';
 import { buildConversationPrompt } from '../prompts/conversationPrompt.js';
 import { synthesizeSpeechToStoredAudio } from './speechService.js';
 import type { Level } from '../types/content.js';
@@ -35,23 +35,6 @@ type ConversationUser = {
   level: Level;
   name?: string | null;
 };
-
-function getRoleplayStep(
-  steps: ReadonlyArray<{
-    type: 'learn' | 'repeat' | 'roleplay';
-    roleplay?: RoleplayStep | null;
-  }>,
-): RoleplayStep {
-  const roleplay = steps.find(
-    (step) => step.type === 'roleplay' && step.roleplay !== null && step.roleplay !== undefined,
-  )?.roleplay;
-
-  if (!roleplay) {
-    throw new ApiError(400, 'Lesson has no roleplay step');
-  }
-
-  return roleplay;
-}
 
 function toConversationMessage(message: ConversationMessage) {
   return {
@@ -90,13 +73,10 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
     throw new ApiError(404, 'Lesson not found');
   }
 
-  const roleplay = getRoleplayStep(
-    lesson.steps.map((step) => ({
-      type: step.type,
-      roleplay: step.roleplay as unknown as RoleplayStep | undefined,
-    })),
-  );
-  const openingAudioUrl = await synthesizeConversationAudio(roleplay.openingLine);
+  const chat = lesson.chat;
+  const opening = chat.turns[0];
+  if (!opening) throw new ApiError(400, 'Lesson has no conversation turns');
+  const openingAudioUrl = await synthesizeConversationAudio(opening.ai);
 
   const conversation = await Conversation.create({
     userId,
@@ -105,19 +85,19 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
     messages: [
       {
         role: 'ai',
-        text: roleplay.openingLine,
+        text: opening.ai,
         audioUrl: openingAudioUrl,
         turnIndex: 0,
       },
     ],
-    script: roleplay.turns?.length ? { turnIndex: 0, attempts: 0 } : undefined,
+    script: chat.turns.length ? { turnIndex: 0, attempts: 0 } : undefined,
   });
 
   return {
     conversationId: conversation._id.toString(),
     status: conversation.status,
     messages: conversation.messages.map(toConversationMessage),
-    turnsRemaining: roleplay.maxTurns,
+    turnsRemaining: chat.turns.length * 3,
   };
 }
 
@@ -168,12 +148,8 @@ export async function takeConversationTurn(
     throw new ApiError(404, 'Lesson not found');
   }
 
-  const roleplay = getRoleplayStep(
-    lesson.steps.map((step) => ({
-      type: step.type,
-      roleplay: step.roleplay as unknown as RoleplayStep | undefined,
-    })),
-  );
+  const chat = lesson.chat;
+  const maxTurns = chat.turns.length * 3;
 
   // Atomic conditional update: append user message only if conversation is
   // active and current user turns are below maxTurns.
@@ -201,7 +177,7 @@ export async function takeConversationTurn(
               },
             },
           },
-          roleplay.maxTurns,
+          maxTurns,
         ],
       },
     },
@@ -219,17 +195,35 @@ export async function takeConversationTurn(
   }
 
   const completedUserTurns = countUserTurns(updatedConversation.messages);
-  const turnsRemaining = Math.max(0, roleplay.maxTurns - completedUserTurns);
+  const turnsRemaining = Math.max(0, maxTurns - completedUserTurns);
 
   const lastUserMsg = [...updatedConversation.messages].reverse().find((m) => m.role === 'user');
-  if (roleplay.turns && roleplay.turns.length > 0) {
+  if (chat.turns.length > 0) {
     const scriptState: ScriptState = updatedConversation.script
       ? {
           turnIndex: updatedConversation.script.turnIndex,
           attempts: updatedConversation.script.attempts,
         }
       : { turnIndex: 0, attempts: 0 };
-    const step = stepScript(roleplay.turns, roleplay.closingLine ?? '', scriptState, input.text);
+    const step = stepScript(
+      {
+        turns: chat.turns.map((turn) => ({
+          ai: turn.ai,
+          sentenceId: turn.sentenceId,
+          alternatives: turn.alternatives,
+          repeat: turn.repeat,
+          knownMistakes: turn.knownMistakes?.map((mistake) => ({
+            wrong: mistake.wrong,
+            explanation: mistake.explanation,
+            type: mistake.type,
+          })),
+        })),
+        closingLine: chat.closingLine,
+      },
+      lesson.sentences.map((sentence) => ({ id: sentence.id, text: sentence.text })),
+      scriptState,
+      input.text,
+    );
     if (!lastUserMsg) {
       throw new ApiError(500, 'Conversation user message was not saved');
     }
@@ -251,7 +245,7 @@ export async function takeConversationTurn(
       role: 'ai',
       text: step.reply,
       audioUrl: aiAudioUrl,
-      turnIndex: step.finished ? roleplay.turns.length - 1 : step.state.turnIndex,
+      turnIndex: step.finished ? chat.turns.length - 1 : step.state.turnIndex,
       revealHint: step.revealHint,
       createdAt: new Date(),
     });
@@ -286,10 +280,10 @@ export async function takeConversationTurn(
       reply: step.reply,
       audioUrl: aiAudioUrl,
       endConversation: step.finished,
-      turnsRemaining: Math.max(0, roleplay.turns.length - step.state.turnIndex),
+      turnsRemaining: Math.max(0, maxTurns - completedUserTurns),
       progress: {
-        current: Math.min(step.state.turnIndex + 1, roleplay.turns.length),
-        total: roleplay.turns.length,
+        current: Math.min(step.state.turnIndex + 1, chat.turns.length),
+        total: chat.turns.length,
       },
       hasMistake: step.check.outcome === 'close',
       corrected: step.check.corrected,
@@ -304,7 +298,12 @@ export async function takeConversationTurn(
   try {
     output = await generateConversationResponse({
       system: buildConversationPrompt({
-        roleplay,
+        chat: {
+          aiRole: chat.aiRole,
+          userRole: chat.userRole,
+          situation: chat.situation,
+          goal: chat.goal,
+        },
         user: {
           level: user.level,
           name: user.name ?? undefined,

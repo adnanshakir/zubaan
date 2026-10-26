@@ -213,8 +213,19 @@ export function checkAgainstTarget(target: string, said: string): TurnCheck {
 
 export interface ScriptTurn {
   ai: string;
-  expect: string;
-  hint: { en: string; hi: string };
+  sentenceId: string;
+  alternatives?: readonly string[];
+  repeat: string;
+  knownMistakes?: readonly {
+    wrong: string;
+    explanation: string;
+    type: Exclude<CheckType, 'other'>;
+  }[];
+}
+
+export interface ScriptSentence {
+  id: string;
+  text: string;
 }
 
 export interface ScriptState {
@@ -235,16 +246,34 @@ export interface ScriptStep {
 
 export const MAX_ATTEMPTS = 3;
 
+function containsPhrase(words: readonly string[], phrase: string): boolean {
+  const phraseWords = tokenize(phrase);
+  if (phraseWords.length === 0 || phraseWords.length > words.length) return false;
+  return words.some((_, index) =>
+    phraseWords.every((word, phraseIndex) => words[index + phraseIndex] === word),
+  );
+}
+
+function matchedWordRatio(target: string, said: string): number {
+  const targetWords = tokenize(target);
+  const saidWords = tokenize(said);
+  if (targetWords.length === 0 || saidWords.length === 0) return 0;
+  return (
+    align(targetWords, saidWords).filter((op) => op.kind === 'equal').length / targetWords.length
+  );
+}
+
 export function stepScript(
-  turns: readonly ScriptTurn[],
-  closingLine: string,
+  chat: { turns: readonly ScriptTurn[]; closingLine: string },
+  sentences: readonly ScriptSentence[],
   state: ScriptState,
   userText: string,
 ): ScriptStep {
+  const turns = chat.turns;
   const turn = turns[state.turnIndex];
   if (!turn) {
     return {
-      reply: closingLine,
+      reply: chat.closingLine,
       state,
       finished: true,
       outcome: 'off',
@@ -252,15 +281,66 @@ export function stepScript(
       check: OFF,
     };
   }
-  const check = checkAgainstTarget(turn.expect, userText);
+  const sentence = sentences.find((item) => item.id === turn.sentenceId);
+  if (!sentence) {
+    throw new Error(`Scripted lesson turn references unknown sentence ${turn.sentenceId}`);
+  }
+  const candidates = [sentence.text, ...(turn.alternatives ?? [])];
+  const checks = candidates.map((candidate) => checkAgainstTarget(candidate, userText));
+  const exactIndex = checks.findIndex((candidate) => candidate.outcome === 'exact');
+  const bestIndex =
+    exactIndex >= 0
+      ? exactIndex
+      : checks.reduce(
+          (best, candidate, index) =>
+            matchedWordRatio(candidates[index] ?? '', userText) >
+            matchedWordRatio(candidates[best] ?? '', userText)
+              ? index
+              : best,
+          0,
+        );
+  const selected = checks[bestIndex] ?? OFF;
+  const check: TurnCheck =
+    selected.outcome === 'off'
+      ? selected
+      : {
+          ...selected,
+          corrected: candidates[bestIndex] ?? sentence.text,
+        };
+  if (check.outcome === 'close') {
+    const answerWords = tokenize(userText);
+    const known = (turn.knownMistakes ?? []).filter((mistake) =>
+      containsPhrase(answerWords, mistake.wrong),
+    );
+    if (known.length > 0) {
+      check.explanation = known
+        .slice(0, 2)
+        .map((mistake) => mistake.explanation)
+        .join(' ');
+      check.mistakeType = known[0]?.type ?? check.mistakeType;
+    }
+  }
   const attempts = state.attempts + 1;
+  const otherTurnMatch = turns.some((otherTurn, index) => {
+    if (index === state.turnIndex) return false;
+    const otherSentence = sentences.find((item) => item.id === otherTurn.sentenceId);
+    return otherSentence !== undefined && matchedWordRatio(otherSentence.text, userText) >= 0.8;
+  });
+  if (check.outcome === 'off' && otherTurnMatch) {
+    return {
+      reply: `Good sentence, but not yet. ${turn.repeat}`,
+      state: { turnIndex: state.turnIndex, attempts },
+      finished: false,
+      outcome: 'off',
+      revealHint: false,
+      check,
+    };
+  }
   const moveOn = check.outcome !== 'off' || attempts >= MAX_ATTEMPTS;
   if (!moveOn) {
     const second = attempts >= 2;
     return {
-      reply: second
-        ? `Let's try it together. Say: "${turn.expect}"`
-        : `That's okay, take your time. ${turn.hint.en}`,
+      reply: second ? `Let's try it together. Say: "${sentence.text}"` : turn.repeat,
       state: { turnIndex: state.turnIndex, attempts },
       finished: false,
       outcome: 'off',
@@ -269,9 +349,10 @@ export function stepScript(
     };
   }
   const next = turns[state.turnIndex + 1];
-  const lead = check.outcome === 'off' ? `Let's keep going. You could say: "${turn.expect}". ` : '';
+  const lead =
+    check.outcome === 'off' ? `Let's keep going. You could say: "${sentence.text}". ` : '';
   return {
-    reply: `${lead}${next ? next.ai : closingLine}`,
+    reply: `${lead}${next ? next.ai : chat.closingLine}`,
     state: { turnIndex: state.turnIndex + 1, attempts: 0 },
     finished: next === undefined,
     outcome: check.outcome === 'off' ? 'moved_on' : check.outcome,
