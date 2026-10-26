@@ -406,7 +406,8 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
         {
           "text": "Hi, I am your new neighbour.",
           "hints": { "hi": "नमस्ते, मैं आपका नया पड़ोसी हूँ।" },
-          "tip": null
+          "tip": "Say \"neighbour\" as NAY-bur. The \"gh\" is silent.",
+          "chunks": ["Hi,", "I am", "your new", "neighbour."]
         }
       ]
     },
@@ -425,11 +426,15 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
         "goal": "Introduce yourself and make a friendly first impression.",
         "openingLine": "Hello! I have not seen you here before. Are you new to the building?",
         "maxTurns": 4,
-        "targetPhrases": [
-          "Hi, I am your new neighbour.",
-          "I just moved in last week.",
-          "It is nice to meet you."
-        ]
+        "targetPhrases": ["Hi, I am your new neighbour."],
+        "turns": [
+          {
+            "ai": "Hello! I don't think we've met. Are you new in the building?",
+            "expect": "Hi, I am your new neighbour.",
+            "hint": { "en": "Greet her and say you are her new neighbour.", "hi": "नमस्ते कहें..." }
+          }
+        ],
+        "closingLine": "It's just around the corner. Welcome to the building!"
       }
     }
   ]
@@ -479,6 +484,7 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
       "text": "Hello! I have not seen you here before. Are you new to the building?",
       "audioUrl": "/audio/a1b2c3d4-e5f6-7890-abcd-ef1234567890.wav",
       "createdAt": "2026-10-13T07:35:00.000Z"
+      ,"turnIndex": 0
     }
   ],
   "turnsRemaining": 4
@@ -540,6 +546,11 @@ curl -X POST http://localhost:5000/api/conversations \
   "audioUrl": "/audio/b2c3d4e5-f6a7-8901-bcde-f12345678901.wav",
   "endConversation": false,
   "turnsRemaining": 3,
+  "progress": { "current": 2, "total": 5 },
+  "hasMistake": true,
+  "corrected": "I went to the market yesterday.",
+  "explanation": "Use \"went\" as the past tense of \"go\".",
+  "mistakeType": "tense",
   "correction": {
     "corrected": "I went to the market yesterday.",
     "explanation": "Use \"went\" as the past tense of \"go\".",
@@ -573,6 +584,8 @@ When `endConversation` is `true`, the conversation status changes to
 **Side Effects**:
 - Appends the user message to `conversation.messages` (atomic update with
   guard against exceeding `maxTurns`).
+- Scripted lessons compare the answer with the current turn target, return
+  progress and correction fields, and never call the LLM.
 - Calls the LLM provider to generate a response (validated JSON) which
   now includes correction fields alongside the reply.
 - Computes a `Correction` from the LLM output and attaches it to the user
@@ -1035,6 +1048,7 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `text` | string                              | Yes      |                             |
 | `hints`| `Record<Language, string>` (partial)| No       | Keyed by language code      |
 | `tip`  | string                              | No       |                             |
+| `chunks`| `string[]`                          | No       | Phrase chunks for guided practice |
 
 **RoleplayStep**:
 
@@ -1047,6 +1061,16 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `openingLine`   | string     | Yes      |
 | `maxTurns`      | number     | Yes      |
 | `targetPhrases` | `string[]` | Yes      |
+| `turns`          | `ScriptedRoleplayTurn[]` | No | Present for scripted lessons |
+| `closingLine`    | string     | No       | Final scripted response |
+
+**ScriptedRoleplayTurn**:
+
+| Field | Type | Required |
+| ----- | ---- | -------- |
+| `ai` | string | Yes |
+| `expect` | string | Yes |
+| `hint` | `{ en: string; hi: string }` | Yes |
 
 ### 4.3 Conversation
 
@@ -1060,6 +1084,7 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `startedAt`  | Date                        | Yes      | `Date.now`    |                           |
 | `endedAt`    | Date                        | No       | —             |                           |
 | `durationSec`| number                      | No       | —             | Min: 0                    |
+| `script`     | `{ turnIndex: number; attempts: number }` | No | `{ turnIndex: 0, attempts: 0 }` | Internal scripted state; not serialized |
 | `createdAt`  | Date                        | Auto     | —             |                           |
 | `updatedAt`  | Date                        | Auto     | —             |                           |
 
@@ -1072,6 +1097,9 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `audioUrl`   | string                | No       | `null`       | |
 | `correction` | `Correction` \| null  | No       | `null`       | User messages only. See `Correction` below. |
 | `createdAt`  | Date                  | Yes      | `Date.now`   | |
+| `turnIndex`   | number                | Yes      | `0`          | Script turn associated with the message |
+| `outcome`     | string                | No       | —            | User messages: `"exact"` \| `"close"` \| `"off"` \| `"moved_on"` |
+| `revealHint`  | boolean               | No       | —            | AI messages only |
 
 **Correction** (embedded in user messages when a mistake is found):
 
@@ -1290,6 +1318,7 @@ interface LessonPhrase {
   text: string;
   hints: Partial<Record<Language, string>>;
   tip?: string | null;
+  chunks?: string[];
 }
 
 interface RoleplayStep {
@@ -1300,6 +1329,14 @@ interface RoleplayStep {
   openingLine: string;
   maxTurns: number;
   targetPhrases: string[];
+  turns?: ScriptedRoleplayTurn[];
+  closingLine?: string;
+}
+
+interface ScriptedRoleplayTurn {
+  ai: string;
+  expect: string;
+  hint: { en: string; hi: string };
 }
 
 interface ConversationStartResponse {
@@ -1307,6 +1344,11 @@ interface ConversationStartResponse {
   status: ConversationStatus;
   messages: ConversationMessage[];
   turnsRemaining: number;
+  progress: { current: number; total: number };
+  hasMistake: boolean;
+  corrected: string;
+  explanation: string;
+  mistakeType: MistakeType;
 }
 
 interface ConversationTurnResponse {
@@ -1342,6 +1384,9 @@ interface ConversationMessage {
   text: string;
   audioUrl: string | null;
   correction?: Correction | null; // user messages only
+  turnIndex: number;
+  outcome?: "exact" | "close" | "off" | "moved_on"; // user messages only
+  revealHint?: boolean; // AI messages only
   createdAt: string;              // ISO 8601
 }
 
@@ -1743,7 +1788,16 @@ All environment variable **names** (never values):
 | Constraint                      | Value                          |
 | ------------------------------- | ------------------------------ |
 | Max user turns per conversation | `roleplay.maxTurns` (per lesson; typically 4–5) |
+| Scripted lesson attempts per turn | 3; after the third off-target answer the script moves on |
 | LLM context window              | Last 10 messages (sliding window) |
+
+### 7.5 Scripted lessons
+
+Lessons whose roleplay contains `turns` are deterministic scripted
+conversations. The server compares each answer with the current `expect`
+sentence, provides up to three attempts, and advances after the third
+off-target answer. These turns do not call the LLM; TTS is still generated for
+the scripted AI reply.
 
 ---
 

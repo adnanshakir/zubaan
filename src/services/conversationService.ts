@@ -17,12 +17,16 @@ import {
 } from './conversationLlmService.js';
 import { buildConversationFeedback, type ConversationFeedback } from './feedbackService.js';
 import { recordMistake } from './mistakeService.js';
+import { stepScript, type ScriptState } from '../utils/scripted-lesson.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
   text: string;
   audioUrl?: string | null;
   correction?: Correction | null;
+  turnIndex: number;
+  revealHint?: boolean | null;
+  outcome?: 'exact' | 'close' | 'off' | 'moved_on' | null;
   createdAt: Date;
 };
 
@@ -55,6 +59,9 @@ function toConversationMessage(message: ConversationMessage) {
     text: message.text,
     audioUrl: message.audioUrl ?? null,
     correction: message.role === 'user' ? (message.correction ?? null) : undefined,
+    turnIndex: message.turnIndex,
+    outcome: message.role === 'user' ? message.outcome : undefined,
+    revealHint: message.role === 'ai' ? message.revealHint : undefined,
     createdAt: message.createdAt,
   };
 }
@@ -83,7 +90,12 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
     throw new ApiError(404, 'Lesson not found');
   }
 
-  const roleplay = getRoleplayStep(lesson.steps);
+  const roleplay = getRoleplayStep(
+    lesson.steps.map((step) => ({
+      type: step.type,
+      roleplay: step.roleplay as unknown as RoleplayStep | undefined,
+    })),
+  );
   const openingAudioUrl = await synthesizeConversationAudio(roleplay.openingLine);
 
   const conversation = await Conversation.create({
@@ -95,8 +107,10 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
         role: 'ai',
         text: roleplay.openingLine,
         audioUrl: openingAudioUrl,
+        turnIndex: 0,
       },
     ],
+    script: roleplay.turns?.length ? { turnIndex: 0, attempts: 0 } : undefined,
   });
 
   return {
@@ -154,7 +168,12 @@ export async function takeConversationTurn(
     throw new ApiError(404, 'Lesson not found');
   }
 
-  const roleplay = getRoleplayStep(lesson.steps);
+  const roleplay = getRoleplayStep(
+    lesson.steps.map((step) => ({
+      type: step.type,
+      roleplay: step.roleplay as unknown as RoleplayStep | undefined,
+    })),
+  );
 
   // Atomic conditional update: append user message only if conversation is
   // active and current user turns are below maxTurns.
@@ -202,6 +221,85 @@ export async function takeConversationTurn(
   const completedUserTurns = countUserTurns(updatedConversation.messages);
   const turnsRemaining = Math.max(0, roleplay.maxTurns - completedUserTurns);
 
+  const lastUserMsg = [...updatedConversation.messages].reverse().find((m) => m.role === 'user');
+  if (roleplay.turns && roleplay.turns.length > 0) {
+    const scriptState: ScriptState = updatedConversation.script
+      ? {
+          turnIndex: updatedConversation.script.turnIndex,
+          attempts: updatedConversation.script.attempts,
+        }
+      : { turnIndex: 0, attempts: 0 };
+    const step = stepScript(roleplay.turns, roleplay.closingLine ?? '', scriptState, input.text);
+    if (!lastUserMsg) {
+      throw new ApiError(500, 'Conversation user message was not saved');
+    }
+    lastUserMsg.turnIndex = scriptState.turnIndex;
+    lastUserMsg.outcome = step.outcome;
+    updatedConversation.script = step.state;
+
+    const correction =
+      step.check.outcome === 'close'
+        ? {
+            corrected: step.check.corrected,
+            explanation: step.check.explanation,
+            type: step.check.mistakeType,
+          }
+        : null;
+    lastUserMsg.correction = correction;
+    const aiAudioUrl = await synthesizeConversationAudio(step.reply);
+    updatedConversation.messages.push({
+      role: 'ai',
+      text: step.reply,
+      audioUrl: aiAudioUrl,
+      turnIndex: step.finished ? roleplay.turns.length - 1 : step.state.turnIndex,
+      revealHint: step.revealHint,
+      createdAt: new Date(),
+    });
+
+    if (step.finished) {
+      updatedConversation.status = 'completed';
+      updatedConversation.endedAt = new Date();
+      updatedConversation.durationSec = durationSince(updatedConversation.startedAt);
+    }
+    let feedback: ConversationFeedback | null = null;
+    if (step.finished) {
+      try {
+        feedback = await buildConversationFeedback(updatedConversation);
+      } catch (error) {
+        logger.warn(
+          { conversationId, error },
+          'Conversation completed but feedback could not be built',
+        );
+      }
+    }
+    await updatedConversation.save();
+    if (correction) {
+      await recordMistake({
+        userId: user._id,
+        conversationId: existingConversation._id,
+        lessonId: lesson._id,
+        original: input.text,
+        correction,
+      });
+    }
+    return {
+      reply: step.reply,
+      audioUrl: aiAudioUrl,
+      endConversation: step.finished,
+      turnsRemaining: Math.max(0, roleplay.turns.length - step.state.turnIndex),
+      progress: {
+        current: Math.min(step.state.turnIndex + 1, roleplay.turns.length),
+        total: roleplay.turns.length,
+      },
+      hasMistake: step.check.outcome === 'close',
+      corrected: step.check.corrected,
+      explanation: step.check.explanation,
+      mistakeType: step.check.mistakeType,
+      correction,
+      feedback,
+    };
+  }
+
   let output;
   try {
     output = await generateConversationResponse({
@@ -214,7 +312,6 @@ export async function takeConversationTurn(
         turnsRemaining,
       }),
       messages: toLlmMessages(updatedConversation.messages),
-      scriptedReplies: roleplay.mockReplies,
     });
   } catch (error) {
     await Conversation.updateOne({ _id: conversationId }, { $pop: { messages: 1 } });
@@ -228,13 +325,12 @@ export async function takeConversationTurn(
 
   // Find the user message _id that was just pushed so we can attach
   // the correction to it with arrayFilters in one save.
-  const lastUserMsg = [...updatedConversation.messages].reverse().find((m) => m.role === 'user');
-
   updatedConversation.messages.push({
     role: 'ai',
     text: output.reply,
     audioUrl: aiAudioUrl,
     createdAt: new Date(),
+    turnIndex: completedUserTurns,
   });
 
   const endConversation = turnsRemaining === 0 || output.endConversation;

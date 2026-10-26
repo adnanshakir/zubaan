@@ -83,16 +83,10 @@ export const mockLlmProvider: LlmProvider = {
   async generate(input): Promise<string> {
     const lastUserMessage =
       [...input.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-    const userTurnIndex = input.messages.filter((message) => message.role === 'user').length - 1;
     const rule = MOCK_RULES.find((candidate) => candidate.pattern.test(lastUserMessage));
     const corrected = rule ? lastUserMessage.replace(rule.pattern, rule.replacement) : '';
-    const scriptedReply =
-      input.scriptedReplies && input.scriptedReplies.length > 0
-        ? input.scriptedReplies[Math.min(userTurnIndex, input.scriptedReplies.length - 1)]
-        : undefined;
-
     return JSON.stringify({
-      reply: scriptedReply ?? MOCK_REPLIES[lastUserMessage.length % MOCK_REPLIES.length],
+      reply: MOCK_REPLIES[lastUserMessage.length % MOCK_REPLIES.length],
       endConversation: false,
       hasMistake: Boolean(rule) && corrected !== lastUserMessage,
       corrected: rule && corrected !== lastUserMessage ? corrected : '',

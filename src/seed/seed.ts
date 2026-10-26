@@ -5,7 +5,7 @@ import { lessons } from './lessons.js';
 
 async function seedLessons(): Promise<void> {
   for (const lesson of lessons) {
-    await Lesson.updateOne({ slug: lesson.slug }, { $set: lesson }, { upsert: true });
+    await Lesson.replaceOne({ slug: lesson.slug }, lesson, { upsert: true });
   }
 }
 

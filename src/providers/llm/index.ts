@@ -5,7 +5,6 @@ import { sarvamLlmProvider } from './sarvam.js';
 export type LlmProviderInput = {
   system: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
-  scriptedReplies?: readonly string[];
 };
 
 export interface LlmProvider {

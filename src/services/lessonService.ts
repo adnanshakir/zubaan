@@ -116,6 +116,8 @@ export async function getLessonById(id: string) {
             openingLine: step.roleplay.openingLine,
             maxTurns: step.roleplay.maxTurns,
             targetPhrases: step.roleplay.targetPhrases,
+            turns: step.roleplay.turns,
+            closingLine: step.roleplay.closingLine,
           }
         : undefined,
     })),

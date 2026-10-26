@@ -11,6 +11,13 @@ export type LessonPhrase = {
   text: string;
   hints: Partial<Record<Language, string>>;
   tip?: string;
+  chunks?: string[];
+};
+
+export type ScriptedRoleplayTurn = {
+  ai: string;
+  expect: string;
+  hint: { en: string; hi: string };
 };
 
 export type RoleplayStep = {
@@ -21,7 +28,8 @@ export type RoleplayStep = {
   openingLine: string;
   maxTurns: number;
   targetPhrases: string[];
-  mockReplies?: string[];
+  turns?: ScriptedRoleplayTurn[];
+  closingLine?: string;
 };
 
 export type LessonStep = {
@@ -55,6 +63,9 @@ const phraseSchema = new Schema(
     },
     tip: {
       type: String,
+    },
+    chunks: {
+      type: [String],
     },
   },
   { _id: false },
@@ -90,8 +101,23 @@ const roleplaySchema = new Schema(
       type: [String],
       required: true,
     },
-    mockReplies: {
-      type: [String],
+    turns: {
+      type: [
+        new Schema(
+          {
+            ai: { type: String, required: true },
+            expect: { type: String, required: true },
+            hint: {
+              en: { type: String, required: true },
+              hi: { type: String, required: true },
+            },
+          },
+          { _id: false },
+        ),
+      ],
+    },
+    closingLine: {
+      type: String,
     },
   },
   { _id: false },
