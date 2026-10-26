@@ -2,6 +2,7 @@ import { env } from '../../config/env.js';
 import { sarvamSttProvider } from './sarvam.js';
 
 export const sttProviderNames = ['sarvam'] as const;
+export const sttModes = ['transcribe', 'verbatim', 'codemix', 'translit'] as const;
 export const sttAllowedMimeTypes = [
   'audio/mpeg',
   'audio/mp3',
@@ -73,11 +74,13 @@ export const sttLanguageCodes = [
 
 export type SttProviderName = (typeof sttProviderNames)[number];
 export type SttLanguageCode = (typeof sttLanguageCodes)[number];
+export type SttMode = (typeof sttModes)[number];
 
 export type SttTranscribeInput = {
   audio: Buffer;
   mimeType: SttSupportedMimeType;
   languageCode?: SttLanguageCode;
+  mode: SttMode;
 };
 
 export type SttTranscribeResult = {

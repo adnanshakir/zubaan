@@ -19,6 +19,10 @@ const speechLogSchema = new Schema(
     pace: {
       type: Number,
     },
+    mode: {
+      type: String,
+      enum: ['transcribe', 'verbatim', 'codemix', 'translit'],
+    },
     language: {
       type: String,
       required: true,

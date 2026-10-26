@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-24
+> **Last verified against code**: 2026-10-26
 
 ---
 
@@ -830,6 +830,7 @@ curl -X POST http://localhost:5000/api/speech/tts \
 | `audio`      | File   | Yes      | Max `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes). Must be a supported MIME type (see below); MIME parameters are tolerated. |
 | `language`   | string | No       | One of the STT language codes (see §4.5). Default: `"unknown"`. |
 | `provider`   | string | No       | One of: `"sarvam"`. Default: `env.STT_PROVIDER`.    |
+| `mode`       | string | No       | One of `"transcribe"`, `"verbatim"`, `"codemix"`, `"translit"`. Default: `env.SARVAM_STT_MODE`. |
 
 **Supported MIME Types** (validated by multer file filter after lowercasing,
 trimming, and removing MIME parameters):
@@ -850,6 +851,7 @@ to `audio/webm` before validation, provider upload, and logging.
   "text": "Hi, I am your new neighbour. I just moved in last week.",
   "languageCode": "en-IN",
   "provider": "sarvam",
+  "mode": "codemix",
   "totalMs": 2341,
   "durationSeconds": 4.5
 }
@@ -860,7 +862,8 @@ to `audio/webm` before validation, provider upload, and logging.
 | `text`           | `string`          | Transcribed text                           |
 | `languageCode`   | `string \| null`  | Detected/specified language code           |
 | `provider`       | `string`          | Provider used (`"sarvam"`)                 |
-| `totalMs`        | `number`          | Wall-clock time of the provider call (ms)  |
+| `mode`          | `string`       | Mode used for the transcription            |
+| `totalMs`        | `number`       | Wall-clock time of the provider call (ms)  |
 | `durationSeconds`| `number \| null`  | Duration of the input audio when metadata can determine it; otherwise `null` |
 
 The server first reads normal container metadata. If that is unavailable, it
@@ -1091,6 +1094,7 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `chars`       | number   | No       | TTS: character count               |
 | `audioSeconds`| number   | No       | STT: input audio duration          |
 | `mimeType`    | string   | No       | STT: input audio MIME type         |
+| `mode`        | string   | No       | STT transcription mode used         |
 | `audioBytes`  | number   | Yes      |                                    |
 | `durationMs`  | number   | No       | TTS: generated audio duration (ms) |
 | `totalMs`     | number   | Yes      | Wall-clock provider call time (ms) |
@@ -1204,6 +1208,7 @@ type Goal = "daily_conversation" | "work" | "interviews" | "travel" | "confidenc
 type LessonCategory = "daily" | "work" | "career" | "travel";
 type TtsLanguage = "en-IN" | "hi-IN" | "ta-IN" | "te-IN";
 type TtsProviderName = "kokoro" | "sarvam";
+type SttMode = "transcribe" | "verbatim" | "codemix" | "translit";
 type SttProviderName = "sarvam";
 type ConversationStatus = "active" | "completed" | "abandoned";
 type MessageRole = "user" | "ai";
@@ -1243,6 +1248,7 @@ interface SttRequest {
   // multipart: "audio" file field
   language?: SttLanguageCode;
   provider?: SttProviderName;
+  mode?: SttMode;
 }
 
 // ── Response Bodies ─────────────────────────────────────────
@@ -1398,6 +1404,7 @@ interface SttResponse {
   text: string;
   languageCode: string | null;
   provider: SttProviderName;
+  mode: SttMode;
   totalMs: number;
   durationSeconds: number | null;
 }
@@ -1640,13 +1647,18 @@ requests share one file.
 
 **Sarvam (Saaras v3)**:
 - Model: `saaras:v3`
-- Mode: `verbatim`
+- Mode: configurable via `mode` request field or `SARVAM_STT_MODE` (default: `codemix`)
+- Modes: `transcribe`, `verbatim`, `codemix`, `translit`
 - Supports 24 Indian language codes (see §4.5)
 - Accepts many audio formats (see §3.7)
 - Timeout: `SARVAM_STT_TIMEOUT_MS` (default: 15000)
 - Max file size: `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB)
 - Max duration: `STT_MAX_DURATION_SECONDS` (default: 30 seconds)
 - Supports raw PCM codecs: `pcm_s16le`, `pcm_l16`, `pcm_raw`
+
+When an English-language request returns letters but no Latin letters, the
+service retries once with `translit` and uses that transcript if the retry
+succeeds. If the fallback fails, the original result is retained.
 
 ### 6.4 LLM Provider Details
 
@@ -1680,6 +1692,7 @@ All environment variable **names** (never values):
 | `LLM_PROVIDER`             | Yes (AI reply quality)    | `"mock"` \| `"sarvam"`                   |
 | `TTS_PROVIDER`             | Yes (default TTS)         | `"kokoro"` \| `"sarvam"`                |
 | `STT_PROVIDER`             | Yes (default STT)         | `"sarvam"`                               |
+| `SARVAM_STT_MODE`          | Yes (default STT mode)    | `"transcribe"` \| `"verbatim"` \| `"codemix"` \| `"translit"`; default: `"codemix"` |
 | `SARVAM_API_KEY`           | No (secret)               | Required when any provider is `sarvam`   |
 | `SARVAM_LLM_MODEL`        | Yes (reply behavior)      | `"sarvam-105b"` \| `"sarvam-105b-conversations"` |
 | `SARVAM_TTS_VOICE`         | Yes (conversation voice)  | Used in conversation TTS calls           |

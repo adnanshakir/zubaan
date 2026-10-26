@@ -10,6 +10,7 @@ const envSchema = z
     LLM_PROVIDER: z.enum(['mock', 'sarvam']),
     TTS_PROVIDER: z.enum(['kokoro', 'sarvam']).default('kokoro'),
     STT_PROVIDER: z.enum(['sarvam']).default('sarvam'),
+    SARVAM_STT_MODE: z.enum(['transcribe', 'verbatim', 'codemix', 'translit']).default('codemix'),
     SARVAM_API_KEY: z
       .string()
       .trim()

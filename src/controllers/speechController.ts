@@ -40,6 +40,7 @@ export const transcribeStt: RequestHandler = async (req, res) => {
     mimeType: req.file.mimetype,
     languageCode: body.language,
     provider: body.provider,
+    mode: body.mode,
   };
 
   const result = await transcribeSpeech(input);
@@ -48,6 +49,7 @@ export const transcribeStt: RequestHandler = async (req, res) => {
     text: result.text,
     languageCode: result.languageCode,
     provider: result.provider,
+    mode: result.mode,
     totalMs: result.totalMs,
     durationSeconds: result.durationSeconds,
   });
