@@ -391,6 +391,8 @@ export async function transcribeSpeech(
       {
         kind: 'stt',
         provider: providerName,
+        languageCodeSent: languageCode,
+        languageCodeReceived: output.languageCode,
         totalMs,
         mimeType: input.mimeType,
         audioBytes: input.audio.length,
