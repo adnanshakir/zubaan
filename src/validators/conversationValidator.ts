@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const conversationStartRequestSchema = z.object({
   body: z.object({
     lessonId: z.string().trim().min(1),
+    attemptId: z.string().trim().min(1).optional(),
   }),
 });
 

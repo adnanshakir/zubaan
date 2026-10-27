@@ -19,6 +19,7 @@
    - [Home](#33-home)
    - [Lessons](#34-lessons)
    - [Conversations](#35-conversations)
+   - [Lesson Attempts](#36-lesson-attempts)
    - [Speech — TTS](#36-speech--tts)
    - [Speech — STT](#37-speech--stt)
    - [Mistakes](#38-mistakes)
@@ -462,12 +463,14 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 | Field      | Type     | Required | Validation                     |
 | ---------- | -------- | -------- | ------------------------------ |
 | `lessonId` | `string` | Yes      | Trimmed, min 1 char (ObjectId) |
+| `attemptId` | `string` | No      | An attempt for the same lesson and owner |
 
 **Success Response** — `201`:
 
 ```json
 {
   "conversationId": "665f1a2b3c4d5e6f7a8b9c10",
+  "attemptId": null,
   "status": "active",
   "messages": [
     {
@@ -499,6 +502,10 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 - TTS is called to synthesize the opening line; audio is saved to disk.
 - A `SpeechLog` document is created for the TTS call.
 
+If `attemptId` is supplied, it is stored on the conversation and must belong
+to the same lesson and owner. Conversation responses include `attemptId`
+(`null` when absent).
+
 **Example curl**:
 
 ```bash
@@ -507,6 +514,74 @@ curl -X POST http://localhost:5000/api/conversations \
   -H "x-user-id: 665f1a2b3c4d5e6f7a8b9c0d" \
   -d '{ "lessonId": "665f1a2b3c4d5e6f7a8b9c0e" }'
 ```
+
+---
+
+### 3.6 Lesson Attempts
+
+All attempt endpoints require `x-user-id`.
+
+#### `POST /api/lessons/:lessonId/attempts`
+
+Creates an attempt and returns `201 { "attemptId": "..." }`.
+
+#### `POST /api/attempts/:attemptId/results`
+
+Request body:
+
+```json
+{
+  "exerciseId": "g3",
+  "result": "wrong",
+  "answer": "move",
+  "retry": false
+}
+```
+
+`result` is `correct | wrong` for `mcq`, `gap`, `listen_pick`, `order_words`,
+and `match_pairs`; it is `said | close | missed | skipped` for `speak`.
+`answer` is a string for MCQ/gap/listen-pick and an array of at most 30
+strings, each at most 40 characters, for order-words. The server resolves
+`stageId` and exercise type from the stored lesson. A second non-retry
+submission returns `{ "recorded": false, "mistakeSaved": false }`.
+Retries only accept `correct` or `wrong`, update `retryResult`, and never
+create a mistake.
+
+Success response (`200`):
+
+```json
+{ "recorded": true, "mistakeSaved": true }
+```
+
+#### `POST /api/attempts/:attemptId/complete`
+
+Request body: `{ "bestStreak": 0 }`, where `bestStreak` is an integer from 0
+through 200. The `200` response is the same attempt object returned by the GET.
+
+#### `GET /api/attempts/:attemptId`
+
+Returns:
+
+```json
+{
+  "attemptId": "...",
+  "lessonId": "...",
+  "startedAt": "2026-10-27T00:00:00.000Z",
+  "completedAt": null,
+  "bestStreak": 0,
+  "results": [
+    { "exerciseId": "g3", "stageId": "sentences", "type": "gap", "result": "wrong", "retryResult": null }
+  ],
+  "mistakes": [
+    { "exerciseId": "g3", "original": "I just move in last week.", "corrected": "I just moved in last week.", "explanation": "...", "mistakeType": "tense" }
+  ]
+}
+```
+
+An exercise mistake is saved only for a first, non-retry `wrong` result with
+an exercise `mistakeType` and an answer. Mistake-bank records are deduplicated
+using the same user, lesson, original, corrected, and type key as conversation
+corrections.
 
 ---
 
@@ -733,7 +808,7 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 
 ---
 
-### 3.6 Speech — TTS
+### 3.7 Speech — TTS
 
 #### `POST /api/speech/tts`
 
@@ -818,7 +893,7 @@ curl -X POST http://localhost:5000/api/speech/tts \
 
 ---
 
-### 3.7 Speech — STT
+### 3.8 Speech — STT
 
 #### `POST /api/speech/stt`
 
@@ -906,7 +981,7 @@ curl -X POST http://localhost:5000/api/speech/stt \
 
 ---
 
-### 3.8 Mistakes
+### 3.9 Mistakes
 
 The mistake bank stores non-null corrections found during conversation turns
 and returns only the authenticated user's mistakes.
@@ -1119,13 +1194,30 @@ Each turn also has `repeat`, optional `alternatives`, and optional
 | ---------------- | ---------- | -------- | ------- | ----- |
 | `_id`            | ObjectId   | Auto     | —       | |
 | `userId`         | ObjectId   | Yes      | —       | Reference to `User` |
-| `conversationId` | ObjectId   | Yes      | —       | Reference to `Conversation` |
+| `conversationId` | ObjectId   | No       | —       | Reference to `Conversation` |
+| `attemptId`      | ObjectId   | No       | —       | Reference to `LessonAttempt` |
 | `lessonId`       | ObjectId   | Yes      | —       | Reference to `Lesson` |
 | `original`       | string     | Yes      | —       | Trimmed; max 500 chars |
 | `corrected`      | string     | Yes      | —       | Trimmed; max 500 chars |
 | `explanation`    | string     | No       | `""`    | Trimmed; max 160 chars |
 | `type`           | MistakeType | Yes     | —       | |
-| `createdAt`      | Date       | Yes      | Auto    | Newest-first indexes by user |
+| `source`         | string      | Yes     | `"conversation"` | `"conversation"` or `"exercise"` |
+| `createdAt`      | Date        | Yes      | Auto    | Newest-first indexes by user |
+
+### 4.4 LessonAttempt
+
+| Field | Type | Required | Default | Notes |
+| ----- | ---- | -------- | ------- | ----- |
+| `lessonId` | ObjectId | Yes | — | Reference to `Lesson` |
+| `userId` | ObjectId | Yes | — | Attempt owner |
+| `startedAt` | Date | Yes | `Date.now` | |
+| `completedAt` | Date | No | — | Set by the complete endpoint |
+| `bestStreak` | integer | Yes | `0` | 0–200 |
+| `results` | `LessonAttemptResult[]` | Yes | `[]` | One first result per exercise |
+
+`LessonAttemptResult` contains `exerciseId`, `stageId`, `type`, `result`,
+optional `retryResult`, and optional saved mistake fields
+`original`, `corrected`, `explanation`, and `mistakeType`.
 
 ### 4.5 Enums
 
@@ -1223,6 +1315,8 @@ type SttMode = "transcribe" | "verbatim" | "codemix" | "translit";
 type SttProviderName = "sarvam";
 type ConversationStatus = "active" | "completed" | "abandoned";
 type MessageRole = "user" | "ai";
+type LessonAttemptResultType = "correct" | "wrong" | "said" | "close" | "missed" | "skipped";
+type MistakeKind = "grammar" | "tense" | "preposition" | "word_choice";
 
 type SttLanguageCode =
   | "unknown" | "hi-IN" | "bn-IN" | "kn-IN" | "ml-IN" | "mr-IN"
@@ -1241,6 +1335,18 @@ interface OnboardingRequest {
 
 interface ConversationStartRequest {
   lessonId: string;
+  attemptId?: string;
+}
+
+interface AttemptResultRequest {
+  exerciseId: string;
+  result: LessonAttemptResultType;
+  answer?: string | string[];
+  retry?: boolean;
+}
+
+interface AttemptCompleteRequest {
+  bestStreak: number; // integer, 0–200
 }
 
 interface ConversationTurnRequest {
@@ -1313,11 +1419,11 @@ type Exercise = McqExercise | GapExercise | ListenPickExercise |
 
 interface McqExercise {
   id: string; type: "mcq"; prompt: string; promptHi?: string;
-  options: string[]; correct: string; explanation: string;
+  options: string[]; correct: string; explanation: string; mistakeType?: MistakeKind;
 }
 interface GapExercise {
   id: string; type: "gap"; sentence: string; hi: string;
-  options: string[]; correct: string; explanation: string;
+  options: string[]; correct: string; explanation: string; mistakeType?: MistakeKind;
 }
 interface ListenPickExercise {
   id: string; type: "listen_pick"; prompt: string; text: string;
@@ -1329,7 +1435,7 @@ interface MatchPairsExercise {
 }
 interface OrderWordsExercise {
   id: string; type: "order_words"; promptHi: string; answer: string;
-  extraWords?: string[]; explanation: string;
+  extraWords?: string[]; explanation: string; mistakeType?: MistakeKind;
 }
 interface SpeakExercise {
   id: string; type: "speak"; sentenceId: string;
@@ -1352,6 +1458,7 @@ interface ChatTurn {
 
 interface ConversationStartResponse {
   conversationId: string;
+  attemptId: string | null;
   status: ConversationStatus;
   messages: ConversationMessage[];
   turnsRemaining: number;
@@ -1373,6 +1480,7 @@ interface ConversationTurnResponse {
 
 interface ConversationEndResponse {
   conversationId: string;
+  attemptId: string | null;
   status: ConversationStatus;
   durationSec: number;
   userTurns: number;
@@ -1382,6 +1490,7 @@ interface ConversationEndResponse {
 interface ConversationGetResponse {
   conversationId: string;
   lessonId: string;
+  attemptId: string | null;
   status: ConversationStatus;
   messages: ConversationMessage[];
   startedAt: string;              // ISO 8601
@@ -1402,6 +1511,28 @@ interface ConversationMessage {
 }
 
 type MistakeType = "grammar" | "tense" | "preposition" | "word_choice" | "other";
+
+interface LessonAttemptResponse {
+  attemptId: string;
+  lessonId: string;
+  startedAt: string;
+  completedAt: string | null;
+  bestStreak: number;
+  results: Array<{
+    exerciseId: string;
+    stageId: "words" | "sentences";
+    type: string;
+    result: LessonAttemptResultType;
+    retryResult?: "correct" | "wrong";
+  }>;
+  mistakes: Array<{
+    exerciseId: string;
+    original: string;
+    corrected: string;
+    explanation: string;
+    mistakeType: MistakeKind;
+  }>;
+}
 
 interface Correction {
   corrected: string;

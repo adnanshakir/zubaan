@@ -32,6 +32,15 @@ Stages are `words` and `sentences`. Every exercise has an `id` and `type`:
 - `order_words`: `promptHi`, `answer`, optional `extraWords`, `explanation`
 - `speak`: `sentenceId`
 
+The `mcq`, `gap`, and `order_words` exercise types may also set
+`mistakeType` to `grammar`, `tense`, `preposition`, or `word_choice`.
+Only exercises with this field are registered in the mistake bank when the
+learner submits a wrong answer with an answer value. For a gap exercise,
+`original` is the sentence with `___` replaced by the chosen answer and
+`corrected` replaces it with `correct`. For order words, they are
+`answer.join(' ')` and the exercise `answer`; for an MCQ, they are the chosen
+option and `correct`. The exercise explanation is stored with the result.
+
 Exercise answers are stored as mixed values in MongoDB, but the
 `Exercise` union and `validateLesson` provide authoring-time type checking and
 validation. `validateLesson` also checks sentence chunks, IDs, options,

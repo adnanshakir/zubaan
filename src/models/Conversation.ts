@@ -77,6 +77,10 @@ const conversationSchema = new Schema(
       ref: 'Lesson',
       required: true,
     },
+    attemptId: {
+      type: Schema.Types.ObjectId,
+      ref: 'LessonAttempt',
+    },
     status: {
       type: String,
       enum: ['active', 'completed', 'abandoned'],

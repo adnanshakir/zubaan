@@ -8,20 +8,49 @@ export const MAX_PAGE_SIZE = 50;
 
 export async function recordMistake(input: {
   userId: Types.ObjectId;
-  conversationId: Types.ObjectId;
+  conversationId?: Types.ObjectId;
+  attemptId?: Types.ObjectId;
   lessonId: Types.ObjectId;
   original: string;
   correction: Correction;
-}): Promise<void> {
-  await Mistake.create({
-    userId: input.userId,
-    conversationId: input.conversationId,
-    lessonId: input.lessonId,
-    original: input.original,
-    corrected: input.correction.corrected,
-    explanation: input.correction.explanation,
-    type: input.correction.type,
-  });
+  source?: 'exercise' | 'conversation';
+}): Promise<boolean> {
+  const result = await Mistake.updateOne(
+    {
+      userId: input.userId,
+      lessonId: input.lessonId,
+      original: input.original,
+      corrected: input.correction.corrected,
+      type: input.correction.type,
+    },
+    {
+      $setOnInsert: {
+        userId: input.userId,
+        ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+        ...(input.attemptId ? { attemptId: input.attemptId } : {}),
+        lessonId: input.lessonId,
+        original: input.original,
+        corrected: input.correction.corrected,
+        explanation: input.correction.explanation,
+        type: input.correction.type,
+        source: input.source ?? 'conversation',
+      },
+    },
+    { upsert: true },
+  );
+  return result.upsertedCount > 0;
+}
+
+export async function createMistake(input: {
+  userId: Types.ObjectId;
+  conversationId?: Types.ObjectId;
+  attemptId?: Types.ObjectId;
+  lessonId: Types.ObjectId;
+  original: string;
+  correction: Correction;
+  source?: 'exercise' | 'conversation';
+}): Promise<boolean> {
+  return recordMistake(input);
 }
 
 export async function listMistakes(
@@ -48,7 +77,7 @@ export async function listMistakes(
       corrected: row.corrected,
       explanation: row.explanation,
       type: row.type,
-      conversationId: String(row.conversationId),
+      conversationId: row.conversationId ? String(row.conversationId) : null,
       lessonId: String(row.lessonId),
       createdAt: row.createdAt,
     })),

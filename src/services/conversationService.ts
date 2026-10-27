@@ -1,5 +1,6 @@
 import { isValidObjectId, type Types } from 'mongoose';
 import { Conversation } from '../models/Conversation.js';
+import { LessonAttempt } from '../models/LessonAttempt.js';
 import { Lesson } from '../models/Lesson.js';
 import { buildConversationPrompt } from '../prompts/conversationPrompt.js';
 import { synthesizeSpeechToStoredAudio } from './speechService.js';
@@ -72,6 +73,15 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
   if (!lesson) {
     throw new ApiError(404, 'Lesson not found');
   }
+  if (input.attemptId) {
+    if (!isValidObjectId(input.attemptId)) throw new ApiError(400, 'Invalid attemptId');
+    const attempt = await LessonAttempt.findOne({
+      _id: input.attemptId,
+      lessonId: lesson._id,
+      userId,
+    });
+    if (!attempt) throw new ApiError(400, 'Attempt does not belong to this lesson and user');
+  }
 
   const chat = lesson.chat;
   const opening = chat.turns[0];
@@ -81,6 +91,7 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
   const conversation = await Conversation.create({
     userId,
     lessonId: lesson._id,
+    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
     status: 'active',
     messages: [
       {
@@ -95,6 +106,7 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
 
   return {
     conversationId: conversation._id.toString(),
+    attemptId: conversation.attemptId?.toString() ?? null,
     status: conversation.status,
     messages: conversation.messages.map(toConversationMessage),
     turnsRemaining: chat.turns.length * 3,
@@ -401,6 +413,7 @@ export async function endConversation(user: ConversationUser, conversationId: st
 
   return {
     conversationId: conversation._id.toString(),
+    attemptId: conversation.attemptId?.toString() ?? null,
     status: conversation.status,
     durationSec: conversation.durationSec ?? 0,
     userTurns: countUserTurns(conversation.messages),
@@ -416,6 +429,7 @@ export async function getConversation(user: ConversationUser, conversationId: st
   return {
     conversationId: conversation._id.toString(),
     lessonId: conversation.lessonId.toString(),
+    attemptId: conversation.attemptId?.toString() ?? null,
     status: conversation.status,
     messages: conversation.messages.map(toConversationMessage),
     startedAt: conversation.startedAt,

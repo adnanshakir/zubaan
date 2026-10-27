@@ -1,0 +1,175 @@
+import { isValidObjectId, type Types } from 'mongoose';
+import { Lesson } from '../models/Lesson.js';
+import { LessonAttempt, type LessonAttemptDocument } from '../models/LessonAttempt.js';
+import { createMistake } from './mistakeService.js';
+import { ApiError } from '../utils/ApiError.js';
+import type { AttemptResultInput, CompleteAttemptInput } from '../validators/attemptValidator.js';
+import type { Correction } from './conversationLlmService.js';
+
+type Exercise = {
+  id: string;
+  type: string;
+  mistakeType?: Correction['type'];
+  sentence?: string;
+  correct?: string;
+  answer?: string;
+  explanation?: string;
+};
+
+type Stage = { id: string; exercises: Exercise[] };
+
+function findAttempt(userId: Types.ObjectId, attemptId: string): Promise<LessonAttemptDocument> {
+  if (!isValidObjectId(attemptId)) throw new ApiError(404, 'Attempt not found');
+  return LessonAttempt.findOne({ _id: attemptId, userId }).then((attempt) => {
+    if (!attempt) throw new ApiError(404, 'Attempt not found');
+    return attempt;
+  });
+}
+
+async function getExercise(attempt: LessonAttemptDocument, exerciseId: string) {
+  const lesson = await Lesson.findById(attempt.lessonId).lean();
+  if (!lesson) throw new ApiError(404, 'Lesson not found');
+  const stages = lesson.stages as unknown as Stage[];
+  for (const stage of stages) {
+    const exercise = stage.exercises.find((candidate) => candidate.id === exerciseId);
+    if (exercise) return { lesson, stage, exercise };
+  }
+  throw new ApiError(400, 'Exercise does not belong to this lesson');
+}
+
+function validateAnswer(exercise: Exercise, answer: string | string[] | undefined): void {
+  if (answer === undefined) return;
+  if (['mcq', 'gap', 'listen_pick'].includes(exercise.type) && typeof answer !== 'string') {
+    throw new ApiError(400, 'answer must be a string');
+  }
+  if (exercise.type === 'order_words') {
+    if (!Array.isArray(answer) || answer.length > 30 || answer.some((word) => word.length > 40)) {
+      throw new ApiError(400, 'answer must be an array of up to 30 words of 40 characters');
+    }
+  }
+}
+
+function mistakeText(
+  exercise: Exercise,
+  answer: string | string[],
+): { original: string; corrected: string } {
+  if (exercise.type === 'gap') {
+    return {
+      original: exercise.sentence!.replace('___', String(answer)),
+      corrected: exercise.sentence!.replace('___', exercise.correct!),
+    };
+  }
+  if (exercise.type === 'order_words') {
+    return { original: (answer as string[]).join(' '), corrected: exercise.answer! };
+  }
+  return { original: String(answer), corrected: exercise.correct! };
+}
+
+function response(attempt: LessonAttemptDocument) {
+  return {
+    attemptId: attempt._id.toString(),
+    lessonId: attempt.lessonId.toString(),
+    startedAt: attempt.startedAt,
+    completedAt: attempt.completedAt ?? null,
+    bestStreak: attempt.bestStreak,
+    results: attempt.results.map((result) => ({
+      exerciseId: result.exerciseId,
+      stageId: result.stageId,
+      type: result.type,
+      result: result.result,
+      retryResult: result.retryResult,
+    })),
+    mistakes: attempt.results
+      .filter((result) => result.original)
+      .map((result) => ({
+        exerciseId: result.exerciseId,
+        original: result.original,
+        corrected: result.corrected,
+        explanation: result.explanation,
+        mistakeType: result.mistakeType,
+      })),
+  };
+}
+
+export async function createAttempt(userId: Types.ObjectId, lessonId: string) {
+  if (!isValidObjectId(lessonId) || !(await Lesson.exists({ _id: lessonId }))) {
+    throw new ApiError(404, 'Lesson not found');
+  }
+  const attempt = await LessonAttempt.create({ lessonId, userId });
+  return { attemptId: attempt._id.toString() };
+}
+
+export async function recordAttemptResult(
+  userId: Types.ObjectId,
+  attemptId: string,
+  input: AttemptResultInput,
+) {
+  const attempt = await findAttempt(userId, attemptId);
+  const { lesson, stage, exercise } = await getExercise(attempt, input.exerciseId);
+  validateAnswer(exercise, input.answer);
+  const allowed = ['mcq', 'gap', 'listen_pick', 'order_words', 'match_pairs'].includes(
+    exercise.type,
+  )
+    ? ['correct', 'wrong']
+    : exercise.type === 'speak'
+      ? ['said', 'close', 'missed', 'skipped']
+      : [];
+  if (!allowed.includes(input.result)) throw new ApiError(400, 'Invalid result for exercise type');
+
+  const existing = attempt.results.find((result) => result.exerciseId === input.exerciseId);
+  if (input.retry) {
+    if (!existing || !['correct', 'wrong'].includes(input.result)) {
+      throw new ApiError(400, 'Invalid retry result');
+    }
+    existing.retryResult = input.result as 'correct' | 'wrong';
+    await attempt.save();
+    return { recorded: true, mistakeSaved: false };
+  }
+  if (existing) return { recorded: false, mistakeSaved: false };
+
+  let mistakeSaved = false;
+  const result = {
+    exerciseId: input.exerciseId,
+    stageId: stage.id,
+    type: exercise.type,
+    result: input.result,
+  } as LessonAttemptDocument['results'][number];
+  if (input.result === 'wrong' && exercise.mistakeType && input.answer !== undefined) {
+    const text = mistakeText(exercise, input.answer);
+    result.original = text.original;
+    result.corrected = text.corrected;
+    result.explanation = exercise.explanation;
+    result.mistakeType = exercise.mistakeType;
+    mistakeSaved = await createMistake({
+      userId,
+      attemptId: attempt._id,
+      lessonId: lesson._id,
+      original: text.original,
+      correction: {
+        corrected: text.corrected,
+        explanation: exercise.explanation ?? '',
+        type: exercise.mistakeType,
+      },
+      source: 'exercise',
+    });
+  }
+  attempt.results.push(result);
+  await attempt.save();
+  return { recorded: true, mistakeSaved };
+}
+
+export async function completeAttempt(
+  userId: Types.ObjectId,
+  attemptId: string,
+  input: CompleteAttemptInput,
+) {
+  const attempt = await findAttempt(userId, attemptId);
+  attempt.completedAt = new Date();
+  attempt.bestStreak = input.bestStreak;
+  await attempt.save();
+  return response(attempt);
+}
+
+export async function getAttempt(userId: Types.ObjectId, attemptId: string) {
+  return response(await findAttempt(userId, attemptId));
+}
