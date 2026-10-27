@@ -142,6 +142,7 @@ export const jobInterviewLesson: LessonContent = {
         {
           id: 'g1',
           type: 'gap',
+          mistakeType: 'grammar',
           sentence: 'I have experience ___ with cross-functional teams.',
           hi: 'मुझे अलग-अलग टीमों के साथ काम करने का अनुभव है।',
           options: ['working', 'work', 'worked', 'works'],
@@ -152,6 +153,7 @@ export const jobInterviewLesson: LessonContent = {
         {
           id: 'g2',
           type: 'mcq',
+          mistakeType: 'grammar',
           prompt: 'Choose the correct sentence.',
           promptHi: 'सही वाक्य चुनें।',
           options: [
@@ -167,6 +169,7 @@ export const jobInterviewLesson: LessonContent = {
         {
           id: 'g3',
           type: 'gap',
+          mistakeType: 'tense',
           sentence: 'In my last job, I ___ our app speed.',
           hi: 'अपनी पिछली नौकरी में मैंने हमारे ऐप की स्पीड बेहतर की।',
           options: ['improved', 'improve', 'improving', 'will improve'],
@@ -177,6 +180,7 @@ export const jobInterviewLesson: LessonContent = {
         {
           id: 'g4',
           type: 'order_words',
+          mistakeType: 'grammar',
           promptHi: 'योजना बनाना और जल्दी मदद माँगना — यही मेरा तरीका है।',
           answer: 'I make a plan and ask for help early.',
           extraWords: ['to', 'makes'],
@@ -186,6 +190,7 @@ export const jobInterviewLesson: LessonContent = {
         {
           id: 'g5',
           type: 'gap',
+          mistakeType: 'word_choice',
           sentence: 'I am excited about this opportunity ___ it matches my skills.',
           hi: 'मैं इस अवसर को लेकर उत्साहित हूँ क्योंकि यह मेरे कौशल से मेल खाता है।',
           options: ['because', 'but', 'so', 'if'],
@@ -196,6 +201,7 @@ export const jobInterviewLesson: LessonContent = {
         {
           id: 'g6',
           type: 'order_words',
+          mistakeType: 'grammar',
           promptHi: 'क्या आप मुझे टीम के बारे में और बता सकते हैं?',
           answer: 'Could you tell me more about the team?',
           extraWords: ['told', 'of'],

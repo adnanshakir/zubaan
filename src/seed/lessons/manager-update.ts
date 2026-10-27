@@ -143,6 +143,7 @@ export const managerUpdateLesson: LessonContent = {
         {
           id: 'g1',
           type: 'gap',
+          mistakeType: 'tense',
           sentence: 'I have ___ the first draft.',
           hi: 'मैंने पहला ड्राफ़्ट पूरा कर लिया है।',
           options: ['completed', 'complete', 'completing', 'completes'],
@@ -153,6 +154,7 @@ export const managerUpdateLesson: LessonContent = {
         {
           id: 'g2',
           type: 'mcq',
+          mistakeType: 'grammar',
           prompt: 'Choose the correct sentence.',
           promptHi: 'सही वाक्य चुनें।',
           options: [
@@ -168,6 +170,7 @@ export const managerUpdateLesson: LessonContent = {
         {
           id: 'g3',
           type: 'gap',
+          mistakeType: 'preposition',
           sentence: 'I will share the final version ___ Friday.',
           hi: 'शुक्रवार तक (उससे पहले या उसी दिन)',
           options: ['by', 'on', 'at', 'in'],
@@ -178,6 +181,7 @@ export const managerUpdateLesson: LessonContent = {
         {
           id: 'g4',
           type: 'gap',
+          mistakeType: 'grammar',
           sentence: 'There ___ one small delay with the images.',
           hi: 'इमेजेज़ में थोड़ी देरी हो गई है।',
           options: ['is', 'are', 'be', 'were'],
@@ -188,6 +192,7 @@ export const managerUpdateLesson: LessonContent = {
         {
           id: 'g5',
           type: 'order_words',
+          mistakeType: 'preposition',
           promptHi: 'क्या हम सोमवार को इसे साथ मिलकर देख सकते हैं?',
           answer: 'Could we review it together on Monday?',
           extraWords: ['at', 'by'],

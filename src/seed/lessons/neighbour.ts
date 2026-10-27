@@ -145,6 +145,7 @@ export const neighbourLesson: LessonContent = {
         {
           id: 'g1',
           type: 'order_words',
+          mistakeType: 'grammar',
           promptHi: 'नमस्ते, मैं आपका नया पड़ोसी हूँ।',
           answer: 'Hi, I am your new neighbour.',
           extraWords: ['my', 'now'],
@@ -154,6 +155,7 @@ export const neighbourLesson: LessonContent = {
         {
           id: 'g2',
           type: 'mcq',
+          mistakeType: 'grammar',
           prompt: 'Choose the correct sentence.',
           promptHi: 'सही वाक्य चुनें।',
           options: [
@@ -169,6 +171,7 @@ export const neighbourLesson: LessonContent = {
         {
           id: 'g3',
           type: 'gap',
+          mistakeType: 'tense',
           sentence: 'I just ___ in last week.',
           hi: 'मैं पिछले हफ़्ते ही यहाँ रहने आया।',
           options: ['moved', 'move', 'moving', 'moves'],
@@ -179,6 +182,7 @@ export const neighbourLesson: LessonContent = {
         {
           id: 'g4',
           type: 'gap',
+          mistakeType: 'tense',
           sentence: 'I used to ___ in Pune.',
           hi: 'मैं पहले पुणे में रहता था।',
           options: ['live', 'lived', 'living', 'lives'],
@@ -189,6 +193,7 @@ export const neighbourLesson: LessonContent = {
         {
           id: 'g5',
           type: 'gap',
+          mistakeType: 'word_choice',
           sentence: 'I like it ___ it is very quiet.',
           hi: 'मुझे यह पसंद है क्योंकि यह बहुत शांत है।',
           options: ['because', 'so', 'but', 'or'],
@@ -200,6 +205,7 @@ export const neighbourLesson: LessonContent = {
         {
           id: 'g6',
           type: 'order_words',
+          mistakeType: 'grammar',
           promptHi: 'क्या आप मुझे बता सकती हैं कि सबसे नज़दीकी दुकान कहाँ है?',
           answer: 'Could you tell me where the nearest shop is?',
           extraWords: ['does', 'near'],

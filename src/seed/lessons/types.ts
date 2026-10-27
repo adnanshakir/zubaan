@@ -9,6 +9,7 @@ export interface Sentence {
 export interface McqExercise {
   id: string;
   type: 'mcq';
+  mistakeType?: MistakeKind;
   prompt: string;
   promptHi?: string;
   options: readonly string[]; // the app shuffles them
@@ -19,6 +20,7 @@ export interface McqExercise {
 export interface GapExercise {
   id: string;
   type: 'gap';
+  mistakeType?: MistakeKind;
   sentence: string; // contains ___
   hi: string;
   options: readonly string[];
@@ -46,6 +48,7 @@ export interface MatchPairsExercise {
 export interface OrderWordsExercise {
   id: string;
   type: 'order_words';
+  mistakeType?: MistakeKind;
   promptHi: string; // the Hindi sentence to build in English
   answer: string; // tiles = answer.split(' '), punctuation stays on its word
   extraWords?: readonly string[]; // wrong tiles mixed in

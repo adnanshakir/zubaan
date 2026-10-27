@@ -40,13 +40,13 @@ export function validateLesson(lesson: LessonContent): string[] {
           }
           break;
         }
+        case 'order_words': {
+          if (exercise.answer.split(' ').length < 4) fail(`${exercise.id}: answer is too short`);
+          break;
+        }
         case 'match_pairs': {
           const count = exercise.pairs.length;
           if (count < 3 || count > 6) fail(`${exercise.id}: needs 3 to 6 pairs`);
-          break;
-        }
-        case 'order_words': {
-          if (exercise.answer.split(' ').length < 4) fail(`${exercise.id}: answer is too short`);
           break;
         }
         case 'speak': {
@@ -55,6 +55,11 @@ export function validateLesson(lesson: LessonContent): string[] {
           }
           spoken.add(exercise.sentenceId);
           break;
+        }
+      }
+      if (exercise.type !== 'mcq' && exercise.type !== 'gap' && exercise.type !== 'order_words') {
+        if ('mistakeType' in exercise) {
+          fail(`${exercise.id}: mistakeType is not allowed on ${exercise.type}`);
         }
       }
     }
