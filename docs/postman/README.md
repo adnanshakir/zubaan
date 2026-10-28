@@ -33,11 +33,15 @@ For free local conversation testing, configure:
 ```text
 LLM_PROVIDER=mock
 TTS_PROVIDER=kokoro
+STT_PROVIDER=sarvam
+SARVAM_API_KEY=your-key
 ```
 
 TTS, STT, and conversation requests can call external providers and may cost
-money unless the mock/free local configuration is used. STT still needs a
-local audio file in the multipart `audio` field and a provider configuration.
+money unless the mock/free local configuration is used. STT uses `sarvam` by
+default and requires `SARVAM_API_KEY`, even when STT is not used. STT still
+needs a local audio file in the multipart `audio` field and a provider
+configuration.
 The TTS response is JSON metadata; `audioUrl` points to generated WAV audio.
 
 ## Errors and limits

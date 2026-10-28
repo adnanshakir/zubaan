@@ -20,9 +20,9 @@
    - [Lessons](#34-lessons)
    - [Conversations](#35-conversations)
    - [Lesson Attempts](#36-lesson-attempts)
-   - [Speech — TTS](#36-speech--tts)
-   - [Speech — STT](#37-speech--stt)
-   - [Mistakes](#38-mistakes)
+   - [Speech — TTS](#37-speech--tts)
+   - [Speech — STT](#38-speech--stt)
+   - [Mistakes](#39-mistakes)
 4. [Data Models](#4-data-models)
 5. [Flows](#5-flows)
 6. [Providers and Configuration](#6-providers-and-configuration)
@@ -517,72 +517,6 @@ curl -X POST http://localhost:5000/api/conversations \
 
 ---
 
-### 3.6 Lesson Attempts
-
-All attempt endpoints require `x-user-id`.
-
-#### `POST /api/lessons/:lessonId/attempts`
-
-Creates an attempt and returns `201 { "attemptId": "..." }`.
-
-#### `POST /api/attempts/:attemptId/results`
-
-Request body:
-
-```json
-{
-  "exerciseId": "g3",
-  "result": "wrong",
-  "answer": "move",
-  "retry": false
-}
-```
-
-`result` is `correct | wrong` for `mcq`, `gap`, `listen_pick`, `order_words`,
-and `match_pairs`; it is `said | close | missed | skipped` for `speak`.
-`answer` is a string for MCQ/gap/listen-pick and an array of at most 30
-strings, each at most 40 characters, for order-words. The server resolves
-`stageId` and exercise type from the stored lesson. A second non-retry
-submission returns `{ "recorded": false, "mistakeSaved": false }`.
-Retries only accept `correct` or `wrong`, update `retryResult`, and never
-create a mistake.
-
-Success response (`200`):
-
-```json
-{ "recorded": true, "mistakeSaved": true }
-```
-
-#### `POST /api/attempts/:attemptId/complete`
-
-Request body: `{ "bestStreak": 0 }`, where `bestStreak` is an integer from 0
-through 200. The `200` response is the same attempt object returned by the GET.
-
-#### `GET /api/attempts/:attemptId`
-
-Returns:
-
-```json
-{
-  "attemptId": "...",
-  "lessonId": "...",
-  "startedAt": "2026-10-27T00:00:00.000Z",
-  "completedAt": null,
-  "bestStreak": 0,
-  "results": [
-    { "exerciseId": "g3", "stageId": "sentences", "type": "gap", "result": "wrong", "retryResult": null }
-  ],
-  "mistakes": [
-    { "exerciseId": "g3", "original": "I just move in last week.", "corrected": "I just moved in last week.", "explanation": "...", "mistakeType": "tense" }
-  ]
-}
-```
-
-An exercise mistake is saved only for a first, non-retry `wrong` result with
-an exercise `mistakeType` and an answer. Mistake-bank records are deduplicated
-using the same user, lesson, original, corrected, and type key as conversation
-corrections.
-
 ---
 
 #### `POST /api/conversations/:id/turns`
@@ -807,6 +741,73 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 ```
 
 ---
+
+### 3.6 Lesson Attempts
+
+All attempt endpoints require `x-user-id`.
+
+#### `POST /api/lessons/:lessonId/attempts`
+
+Creates an attempt and returns `201 { "attemptId": "..." }`.
+
+#### `POST /api/attempts/:attemptId/results`
+
+Request body:
+
+```json
+{
+  "exerciseId": "g3",
+  "result": "wrong",
+  "answer": "move",
+  "retry": false
+}
+```
+
+`result` is `correct | wrong` for `mcq`, `gap`, `listen_pick`, `order_words`,
+and `match_pairs`; it is `said | close | missed | skipped` for `speak`.
+`answer` is a string for MCQ/gap/listen-pick and an array of at most 30
+strings, each at most 40 characters, for order-words. The answer text, or
+the joined order-words answer, must be at most 500 characters. The server
+resolves `stageId` and exercise type from the stored lesson. A second
+non-retry submission returns `{ "recorded": false, "mistakeSaved": false }`.
+Retries only accept `correct` or `wrong`, update `retryResult`, and never
+create a mistake.
+
+Success response (`200`):
+
+```json
+{ "recorded": true, "mistakeSaved": true }
+```
+
+#### `POST /api/attempts/:attemptId/complete`
+
+Request body: `{ "bestStreak": 0 }`, where `bestStreak` is an integer from 0
+through 200. The `200` response is the same attempt object returned by the GET.
+
+#### `GET /api/attempts/:attemptId`
+
+Returns:
+
+```json
+{
+  "attemptId": "...",
+  "lessonId": "...",
+  "startedAt": "2026-10-27T00:00:00.000Z",
+  "completedAt": null,
+  "bestStreak": 0,
+  "results": [
+    { "exerciseId": "g3", "stageId": "sentences", "type": "gap", "result": "wrong", "retryResult": null }
+  ],
+  "mistakes": [
+    { "exerciseId": "g3", "original": "I just move in last week.", "corrected": "I just moved in last week.", "explanation": "...", "mistakeType": "tense" }
+  ]
+}
+```
+
+An exercise mistake is saved only for a first, non-retry `wrong` result with
+an exercise `mistakeType` and an answer. Mistake-bank records are deduplicated
+using the same user, lesson, original, corrected, and type key as conversation
+corrections.
 
 ### 3.7 Speech — TTS
 
@@ -1462,11 +1463,6 @@ interface ConversationStartResponse {
   status: ConversationStatus;
   messages: ConversationMessage[];
   turnsRemaining: number;
-  progress: { current: number; total: number };
-  hasMistake: boolean;
-  corrected: string;
-  explanation: string;
-  mistakeType: MistakeType;
 }
 
 interface ConversationTurnResponse {
@@ -1474,6 +1470,11 @@ interface ConversationTurnResponse {
   audioUrl: string | null;
   endConversation: boolean;
   turnsRemaining: number;
+  progress: { current: number; total: number };
+  hasMistake: boolean;
+  corrected: string;
+  explanation: string;
+  mistakeType: MistakeType;
   correction: Correction | null;
   feedback: ConversationFeedback | null;
 }
@@ -1837,7 +1838,7 @@ requests share one file.
 - Mode: configurable via `mode` request field or `SARVAM_STT_MODE` (default: `codemix`)
 - Modes: `transcribe`, `verbatim`, `codemix`, `translit`
 - Supports 24 Indian language codes (see §4.5)
-- Accepts many audio formats (see §3.7)
+- Accepts many audio formats (see §3.8)
 - Timeout: `SARVAM_STT_TIMEOUT_MS` (default: 15000)
 - Max file size: `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB)
 - Max duration: `STT_MAX_DURATION_SECONDS` (default: 30 seconds)
@@ -1902,7 +1903,7 @@ All environment variable **names** (never values):
 | STT max file size               | `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes) |
 | STT max audio duration          | 30 seconds                     |
 | Unknown metadata duration       | Full scan once when within the file-size cap; otherwise Sarvam is the 30-second backstop |
-| STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.7) |
+| STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.8) |
 | Recommended recording format    | 16 kHz mono WAV                |
 | TTS output format               | WAV (both providers)           |
 
@@ -2078,10 +2079,10 @@ not exist yet**. Do not build frontend features that depend on these.
 | `POST /api/conversations/:id/turns`   | ✅ §3.5     |
 | `POST /api/conversations/:id/end`     | ✅ §3.5     |
 | `GET /api/conversations/:id`          | ✅ §3.5     |
-| `POST /api/speech/tts`                | ✅ §3.6     |
-| `POST /api/speech/stt`                | ✅ §3.7     |
-| `GET /api/mistakes`                   | ✅ §3.8     |
-| `GET /api/mistakes/summary`           | ✅ §3.8     |
+| `POST /api/speech/tts`                | ✅ §3.7     |
+| `POST /api/speech/stt`                | ✅ §3.8     |
+| `GET /api/mistakes`                   | ✅ §3.9     |
+| `GET /api/mistakes/summary`           | ✅ §3.9     |
 | `GET /audio/*` (static)               | ✅ §1       |
 
 ### Endpoints listed in AGENT.md but **NOT** in code:

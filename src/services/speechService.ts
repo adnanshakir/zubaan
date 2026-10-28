@@ -399,13 +399,16 @@ export async function transcribeSpeech(
       );
 
       try {
-        output = await provider.transcribe({
+        const retryOutput = await provider.transcribe({
           audio: input.audio,
           mimeType: input.mimeType,
           languageCode,
           mode: 'translit',
         });
-        mode = 'translit';
+        if (retryOutput.text.trim()) {
+          output = retryOutput;
+          mode = 'translit';
+        }
       } catch {
         output = firstOutput;
       }

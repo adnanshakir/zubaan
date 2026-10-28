@@ -80,7 +80,11 @@ function tokenize(text: string): string[] {
   for (const raw of cleaned.split(/\s+/)) {
     const word = raw.replace(/^'+|'+$/g, '');
     if (!word) continue;
-    const expanded = CONTRACTIONS[word] ?? ALIASES[word] ?? word;
+    const expanded = Object.prototype.hasOwnProperty.call(CONTRACTIONS, word)
+      ? CONTRACTIONS[word]
+      : Object.prototype.hasOwnProperty.call(ALIASES, word)
+        ? ALIASES[word]
+        : word;
     words.push(...expanded.split(' '));
   }
   return words;

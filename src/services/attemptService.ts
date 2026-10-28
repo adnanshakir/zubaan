@@ -42,8 +42,22 @@ function validateAnswer(exercise: Exercise, answer: string | string[] | undefine
   if (['mcq', 'gap', 'listen_pick'].includes(exercise.type) && typeof answer !== 'string') {
     throw new ApiError(400, 'answer must be a string');
   }
+  if (typeof answer === 'string') {
+    const storedText =
+      exercise.type === 'gap' && exercise.sentence
+        ? exercise.sentence.replace('___', answer)
+        : answer;
+    if (storedText.length > 500) {
+      throw new ApiError(400, 'answer must produce text of at most 500 characters');
+    }
+  }
   if (exercise.type === 'order_words') {
-    if (!Array.isArray(answer) || answer.length > 30 || answer.some((word) => word.length > 40)) {
+    if (
+      !Array.isArray(answer) ||
+      answer.length > 30 ||
+      answer.some((word) => word.length > 40) ||
+      answer.join(' ').length > 500
+    ) {
       throw new ApiError(400, 'answer must be an array of up to 30 words of 40 characters');
     }
   }

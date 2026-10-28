@@ -35,8 +35,8 @@ export function toLessonListItem(lesson: {
   level: string;
   objective: string;
   estimatedMinutes: number;
-  sentences: readonly unknown[];
-  stages: readonly { exercises: readonly unknown[] }[];
+  sentences?: readonly unknown[];
+  stages?: readonly { exercises?: readonly unknown[] }[];
 }): LessonListItem {
   return {
     id: lesson._id.toString(),
@@ -46,8 +46,9 @@ export function toLessonListItem(lesson: {
     level: lesson.level as Level,
     objective: lesson.objective,
     estimatedMinutes: lesson.estimatedMinutes,
-    sentenceCount: lesson.sentences.length,
-    exerciseCount: lesson.stages.reduce((count, stage) => count + stage.exercises.length, 0),
+    sentenceCount: lesson.sentences?.length ?? 0,
+    exerciseCount:
+      lesson.stages?.reduce((count, stage) => count + (stage.exercises?.length ?? 0), 0) ?? 0,
   };
 }
 
