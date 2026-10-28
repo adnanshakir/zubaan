@@ -16,19 +16,29 @@ import { getAudioStorageDirPath } from './utils/audioStorage.js';
 
 const app = express();
 
-const corsOptions = {
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id'],
-  credentials: true,
-};
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://zubaan-web.vercel.app',
+];
 
-app.use(cors(corsOptions));
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id'],
+    credentials: true,
+  }),
+);
 app.use(helmet());
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(morgan('dev'));
+
+app.get('/', (_req, res) => {
+  res.redirect(302, '/health');
+});
 
 app.get('/health', (_req, res) => {
   const response: ApiResponse = {
