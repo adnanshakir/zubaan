@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-27
+> **Last verified against code**: 2026-10-28
 
 ---
 
@@ -100,8 +100,8 @@ All errors follow this envelope:
 }
 ```
 
-There is no `code` field in the current implementation. The `error` object
-contains only `message`.
+The `error` object contains a `message` and may include a machine-readable
+`code` for specific validation errors.
 
 ### 2.4 Status Codes Used
 
@@ -111,6 +111,7 @@ contains only `message`.
 | 201  | Resource created (onboarding, conversation start)              |
 | 400  | Validation error, bad input, unsupported format, duration exceeded |
 | 401  | Missing or invalid `x-user-id` header                          |
+| 422  | Validation failed for an otherwise valid request               |
 | 404  | Resource not found (lesson, conversation)                      |
 | 409  | Conflict (conversation not active, max turns reached)          |
 | 429  | External provider rate limit (proxied from Sarvam)             |
@@ -960,6 +961,7 @@ duration then proceeds as `null`, with Sarvam enforcing its own 30-second limit.
 | 400    | Audio duration exceeds max                        | `"Sarvam STT REST supports up to 30 seconds per request"`           |
 | 400    | Sarvam rejects invalid audio input (422)            | `"Invalid audio input"`                                                |
 | 400    | Sarvam rejects audio exceeding its duration limit (422) | `"Sarvam STT REST supports up to 30 seconds per request"`            |
+| 422    | Audio is silent or shorter than 0.3 seconds       | `"We didn't hear anything. Check that your mic is on and try again."` (`code`: `"AUDIO_TOO_QUIET"`) |
 | 401    | Missing/invalid `x-user-id`                      | `"Unauthorized"`                                                     |
 | 429    | Sarvam rate limit                                 | `"STT provider rate limit exceeded"`                                 |
 | 500    | Provider not configured                           | `"STT provider is not configured"`                                   |

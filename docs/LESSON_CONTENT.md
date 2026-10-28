@@ -15,10 +15,10 @@ precedence over the automatic word-diff explanation. Their `wrong` value is
 normalized and matched as a whole-word phrase. Up to two matching explanations
 are shown.
 
-After the second nudge the sentence is revealed behind the client’s tap. After
-the third unrelated answer the script moves on. If an off-topic answer matches
-another turn’s sentence, the learner receives:
-`Good sentence, but not yet. <repeat>`.
+Every unrelated answer receives the turn’s repeat line. The second nudge also
+reveals the sentence behind the client’s tap, and the third unrelated answer
+moves on with no extra text. An off-topic answer that matches another turn’s
+sentence follows the same nudge behavior.
 
 ## Stages and exercises
 

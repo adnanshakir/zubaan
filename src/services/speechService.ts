@@ -20,6 +20,7 @@ import { SARVAM_MODEL } from '../providers/tts/sarvam.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildAudioCacheName, findCachedAudio, saveAudioAs } from '../utils/audioStorage.js';
 import { logger } from '../utils/logger.js';
+import { measureWav } from '../utils/wav-level.js';
 
 const SARVAM_DEFAULT_VOICE = 'shubh';
 
@@ -363,6 +364,15 @@ export async function transcribeSpeech(
 
   if (durationSeconds !== null && durationSeconds > env.STT_MAX_DURATION_SECONDS) {
     throw new ApiError(400, getSttDurationLimitMessage());
+  }
+
+  const wavLevel = measureWav(input.audio);
+  if (wavLevel !== null && (wavLevel.peak < 0.03 || wavLevel.durationSec < 0.3)) {
+    throw new ApiError(
+      422,
+      "We didn't hear anything. Check that your mic is on and try again.",
+      'AUDIO_TOO_QUIET',
+    );
   }
 
   const providerName = resolveSttProviderName(input.provider);
