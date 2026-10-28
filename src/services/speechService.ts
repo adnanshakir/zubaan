@@ -6,6 +6,7 @@ import {
   type SttSupportedMimeType,
   resolveSttProviderName,
   type SttLanguageCode,
+  type SttMode,
   type SttProviderName,
 } from '../providers/stt/index.js';
 import {
@@ -57,12 +58,14 @@ export type TranscribeSpeechInput = {
   mimeType: SttSupportedMimeType;
   languageCode?: SttLanguageCode;
   provider?: SttProviderName;
+  mode?: SttMode;
 };
 
 export type TranscribeSpeechResult = {
   text: string;
   languageCode: string | null;
   provider: SttProviderName;
+  mode: SttMode;
   totalMs: number;
   durationSeconds: number | null;
 };
@@ -132,6 +135,7 @@ async function writeSttSpeechLog(entry: {
   mimeType: string;
   audioSeconds: number | null;
   audioBytes: number;
+  mode?: SttMode;
   totalMs: number;
   ok: boolean;
   error?: string;
@@ -144,6 +148,7 @@ async function writeSttSpeechLog(entry: {
       mimeType: entry.mimeType,
       audioSeconds: entry.audioSeconds,
       audioBytes: entry.audioBytes,
+      mode: entry.mode,
       totalMs: entry.totalMs,
       ok: entry.ok,
       error: entry.error,
@@ -364,13 +369,50 @@ export async function transcribeSpeech(
   const provider = getSttProvider(providerName);
   const startedAt = Date.now();
   const languageCode = input.languageCode ?? 'unknown';
+  const requestedMode = input.mode ?? env.SARVAM_STT_MODE;
 
   try {
-    const output = await provider.transcribe({
+    const firstOutput = await provider.transcribe({
       audio: input.audio,
       mimeType: input.mimeType,
       languageCode,
+      mode: requestedMode,
     });
+    let output = firstOutput;
+    let mode = requestedMode;
+
+    if (
+      languageCode.startsWith('en') &&
+      requestedMode !== 'translit' &&
+      /\p{L}/u.test(firstOutput.text) &&
+      !/[A-Za-z]/.test(firstOutput.text)
+    ) {
+      logger.info(
+        {
+          kind: 'stt',
+          provider: providerName,
+          languageCode,
+          fromMode: requestedMode,
+          fallbackMode: 'translit',
+        },
+        'STT Latin-script fallback ran',
+      );
+
+      try {
+        const retryOutput = await provider.transcribe({
+          audio: input.audio,
+          mimeType: input.mimeType,
+          languageCode,
+          mode: 'translit',
+        });
+        if (retryOutput.text.trim()) {
+          output = retryOutput;
+          mode = 'translit';
+        }
+      } catch {
+        output = firstOutput;
+      }
+    }
 
     const totalMs = Date.now() - startedAt;
     const resolvedDurationSeconds = isUsableDuration(output.durationSeconds)
@@ -383,6 +425,7 @@ export async function transcribeSpeech(
       mimeType: input.mimeType,
       audioSeconds: resolvedDurationSeconds,
       audioBytes: input.audio.length,
+      mode,
       totalMs,
       ok: true,
     });
@@ -391,6 +434,9 @@ export async function transcribeSpeech(
       {
         kind: 'stt',
         provider: providerName,
+        languageCodeSent: languageCode,
+        languageCodeReceived: output.languageCode,
+        mode,
         totalMs,
         mimeType: input.mimeType,
         audioBytes: input.audio.length,
@@ -402,6 +448,7 @@ export async function transcribeSpeech(
       text: output.text,
       languageCode: output.languageCode,
       provider: providerName,
+      mode,
       totalMs,
       durationSeconds: resolvedDurationSeconds,
     };
@@ -415,6 +462,7 @@ export async function transcribeSpeech(
       mimeType: input.mimeType,
       audioSeconds: durationSeconds,
       audioBytes: input.audio.length,
+      mode: requestedMode,
       totalMs,
       ok: false,
       error: toShortErrorMessage(apiError.message),

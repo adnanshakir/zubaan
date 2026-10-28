@@ -42,6 +42,18 @@ const conversationMessageSchema = new Schema(
       type: correctionSchema,
       default: null,
     },
+    turnIndex: {
+      type: Number,
+      default: 0,
+      required: true,
+    },
+    revealHint: {
+      type: Boolean,
+    },
+    outcome: {
+      type: String,
+      enum: ['exact', 'close', 'off', 'moved_on'],
+    },
     createdAt: {
       type: Date,
       default: Date.now,
@@ -65,6 +77,10 @@ const conversationSchema = new Schema(
       ref: 'Lesson',
       required: true,
     },
+    attemptId: {
+      type: Schema.Types.ObjectId,
+      ref: 'LessonAttempt',
+    },
     status: {
       type: String,
       enum: ['active', 'completed', 'abandoned'],
@@ -75,6 +91,18 @@ const conversationSchema = new Schema(
       type: [conversationMessageSchema],
       required: true,
       default: [],
+    },
+    script: {
+      turnIndex: {
+        type: Number,
+        default: 0,
+        required: true,
+      },
+      attempts: {
+        type: Number,
+        default: 0,
+        required: true,
+      },
     },
     startedAt: {
       type: Date,

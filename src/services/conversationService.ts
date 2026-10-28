@@ -1,6 +1,7 @@
 import { isValidObjectId, type Types } from 'mongoose';
 import { Conversation } from '../models/Conversation.js';
-import { Lesson, type RoleplayStep } from '../models/Lesson.js';
+import { LessonAttempt } from '../models/LessonAttempt.js';
+import { Lesson } from '../models/Lesson.js';
 import { buildConversationPrompt } from '../prompts/conversationPrompt.js';
 import { synthesizeSpeechToStoredAudio } from './speechService.js';
 import type { Level } from '../types/content.js';
@@ -17,12 +18,16 @@ import {
 } from './conversationLlmService.js';
 import { buildConversationFeedback, type ConversationFeedback } from './feedbackService.js';
 import { recordMistake } from './mistakeService.js';
+import { stepScript, type ScriptState } from '../utils/scripted-lesson.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
   text: string;
   audioUrl?: string | null;
   correction?: Correction | null;
+  turnIndex: number;
+  revealHint?: boolean | null;
+  outcome?: 'exact' | 'close' | 'off' | 'moved_on' | null;
   createdAt: Date;
 };
 
@@ -32,29 +37,15 @@ type ConversationUser = {
   name?: string | null;
 };
 
-function getRoleplayStep(
-  steps: ReadonlyArray<{
-    type: 'learn' | 'repeat' | 'roleplay';
-    roleplay?: RoleplayStep | null;
-  }>,
-): RoleplayStep {
-  const roleplay = steps.find(
-    (step) => step.type === 'roleplay' && step.roleplay !== null && step.roleplay !== undefined,
-  )?.roleplay;
-
-  if (!roleplay) {
-    throw new ApiError(400, 'Lesson has no roleplay step');
-  }
-
-  return roleplay;
-}
-
 function toConversationMessage(message: ConversationMessage) {
   return {
     role: message.role,
     text: message.text,
     audioUrl: message.audioUrl ?? null,
     correction: message.role === 'user' ? (message.correction ?? null) : undefined,
+    turnIndex: message.turnIndex,
+    outcome: message.role === 'user' ? message.outcome : undefined,
+    revealHint: message.role === 'ai' ? message.revealHint : undefined,
     createdAt: message.createdAt,
   };
 }
@@ -82,28 +73,43 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
   if (!lesson) {
     throw new ApiError(404, 'Lesson not found');
   }
+  if (input.attemptId) {
+    if (!isValidObjectId(input.attemptId)) throw new ApiError(400, 'Invalid attemptId');
+    const attempt = await LessonAttempt.findOne({
+      _id: input.attemptId,
+      lessonId: lesson._id,
+      userId,
+    });
+    if (!attempt) throw new ApiError(400, 'Attempt does not belong to this lesson and user');
+  }
 
-  const roleplay = getRoleplayStep(lesson.steps);
-  const openingAudioUrl = await synthesizeConversationAudio(roleplay.openingLine);
+  const chat = lesson.chat;
+  const opening = chat.turns[0];
+  if (!opening) throw new ApiError(400, 'Lesson has no conversation turns');
+  const openingAudioUrl = await synthesizeConversationAudio(opening.ai);
 
   const conversation = await Conversation.create({
     userId,
     lessonId: lesson._id,
+    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
     status: 'active',
     messages: [
       {
         role: 'ai',
-        text: roleplay.openingLine,
+        text: opening.ai,
         audioUrl: openingAudioUrl,
+        turnIndex: 0,
       },
     ],
+    script: chat.turns.length ? { turnIndex: 0, attempts: 0 } : undefined,
   });
 
   return {
     conversationId: conversation._id.toString(),
+    attemptId: conversation.attemptId?.toString() ?? null,
     status: conversation.status,
     messages: conversation.messages.map(toConversationMessage),
-    turnsRemaining: roleplay.maxTurns,
+    turnsRemaining: chat.turns.length * 3,
   };
 }
 
@@ -154,7 +160,8 @@ export async function takeConversationTurn(
     throw new ApiError(404, 'Lesson not found');
   }
 
-  const roleplay = getRoleplayStep(lesson.steps);
+  const chat = lesson.chat;
+  const maxTurns = chat.turns.length * 3;
 
   // Atomic conditional update: append user message only if conversation is
   // active and current user turns are below maxTurns.
@@ -182,7 +189,7 @@ export async function takeConversationTurn(
               },
             },
           },
-          roleplay.maxTurns,
+          maxTurns,
         ],
       },
     },
@@ -200,13 +207,115 @@ export async function takeConversationTurn(
   }
 
   const completedUserTurns = countUserTurns(updatedConversation.messages);
-  const turnsRemaining = Math.max(0, roleplay.maxTurns - completedUserTurns);
+  const turnsRemaining = Math.max(0, maxTurns - completedUserTurns);
+
+  const lastUserMsg = [...updatedConversation.messages].reverse().find((m) => m.role === 'user');
+  if (chat.turns.length > 0) {
+    const scriptState: ScriptState = updatedConversation.script
+      ? {
+          turnIndex: updatedConversation.script.turnIndex,
+          attempts: updatedConversation.script.attempts,
+        }
+      : { turnIndex: 0, attempts: 0 };
+    const step = stepScript(
+      {
+        turns: chat.turns.map((turn) => ({
+          ai: turn.ai,
+          sentenceId: turn.sentenceId,
+          alternatives: turn.alternatives,
+          repeat: turn.repeat,
+          knownMistakes: turn.knownMistakes?.map((mistake) => ({
+            wrong: mistake.wrong,
+            explanation: mistake.explanation,
+            type: mistake.type,
+          })),
+        })),
+        closingLine: chat.closingLine,
+      },
+      lesson.sentences.map((sentence) => ({ id: sentence.id, text: sentence.text })),
+      scriptState,
+      input.text,
+    );
+    if (!lastUserMsg) {
+      throw new ApiError(500, 'Conversation user message was not saved');
+    }
+    lastUserMsg.turnIndex = scriptState.turnIndex;
+    lastUserMsg.outcome = step.outcome;
+    updatedConversation.script = step.state;
+
+    const correction =
+      step.check.outcome === 'close'
+        ? {
+            corrected: step.check.corrected,
+            explanation: step.check.explanation,
+            type: step.check.mistakeType,
+          }
+        : null;
+    lastUserMsg.correction = correction;
+    const aiAudioUrl = await synthesizeConversationAudio(step.reply);
+    updatedConversation.messages.push({
+      role: 'ai',
+      text: step.reply,
+      audioUrl: aiAudioUrl,
+      turnIndex: step.finished ? chat.turns.length - 1 : step.state.turnIndex,
+      revealHint: step.revealHint,
+      createdAt: new Date(),
+    });
+
+    if (step.finished) {
+      updatedConversation.status = 'completed';
+      updatedConversation.endedAt = new Date();
+      updatedConversation.durationSec = durationSince(updatedConversation.startedAt);
+    }
+    let feedback: ConversationFeedback | null = null;
+    if (step.finished) {
+      try {
+        feedback = await buildConversationFeedback(updatedConversation);
+      } catch (error) {
+        logger.warn(
+          { conversationId, error },
+          'Conversation completed but feedback could not be built',
+        );
+      }
+    }
+    await updatedConversation.save();
+    if (correction) {
+      await recordMistake({
+        userId: user._id,
+        conversationId: existingConversation._id,
+        lessonId: lesson._id,
+        original: input.text,
+        correction,
+      });
+    }
+    return {
+      reply: step.reply,
+      audioUrl: aiAudioUrl,
+      endConversation: step.finished,
+      turnsRemaining: Math.max(0, maxTurns - completedUserTurns),
+      progress: {
+        current: Math.min(step.state.turnIndex + 1, chat.turns.length),
+        total: chat.turns.length,
+      },
+      hasMistake: step.check.outcome === 'close',
+      corrected: step.check.corrected,
+      explanation: step.check.explanation,
+      mistakeType: step.check.mistakeType,
+      correction,
+      feedback,
+    };
+  }
 
   let output;
   try {
     output = await generateConversationResponse({
       system: buildConversationPrompt({
-        roleplay,
+        chat: {
+          aiRole: chat.aiRole,
+          userRole: chat.userRole,
+          situation: chat.situation,
+          goal: chat.goal,
+        },
         user: {
           level: user.level,
           name: user.name ?? undefined,
@@ -227,13 +336,12 @@ export async function takeConversationTurn(
 
   // Find the user message _id that was just pushed so we can attach
   // the correction to it with arrayFilters in one save.
-  const lastUserMsg = [...updatedConversation.messages].reverse().find((m) => m.role === 'user');
-
   updatedConversation.messages.push({
     role: 'ai',
     text: output.reply,
     audioUrl: aiAudioUrl,
     createdAt: new Date(),
+    turnIndex: completedUserTurns,
   });
 
   const endConversation = turnsRemaining === 0 || output.endConversation;
@@ -305,6 +413,7 @@ export async function endConversation(user: ConversationUser, conversationId: st
 
   return {
     conversationId: conversation._id.toString(),
+    attemptId: conversation.attemptId?.toString() ?? null,
     status: conversation.status,
     durationSec: conversation.durationSec ?? 0,
     userTurns: countUserTurns(conversation.messages),
@@ -320,6 +429,7 @@ export async function getConversation(user: ConversationUser, conversationId: st
   return {
     conversationId: conversation._id.toString(),
     lessonId: conversation.lessonId.toString(),
+    attemptId: conversation.attemptId?.toString() ?? null,
     status: conversation.status,
     messages: conversation.messages.map(toConversationMessage),
     startedAt: conversation.startedAt,

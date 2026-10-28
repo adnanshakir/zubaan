@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-24
+> **Last verified against code**: 2026-10-27
 
 ---
 
@@ -19,9 +19,10 @@
    - [Home](#33-home)
    - [Lessons](#34-lessons)
    - [Conversations](#35-conversations)
-   - [Speech — TTS](#36-speech--tts)
-   - [Speech — STT](#37-speech--stt)
-   - [Mistakes](#38-mistakes)
+   - [Lesson Attempts](#36-lesson-attempts)
+   - [Speech — TTS](#37-speech--tts)
+   - [Speech — STT](#38-speech--stt)
+   - [Mistakes](#39-mistakes)
 4. [Data Models](#4-data-models)
 5. [Flows](#5-flows)
 6. [Providers and Configuration](#6-providers-and-configuration)
@@ -351,7 +352,9 @@ curl http://localhost:5000/api/home \
     "category": "daily",
     "level": "beginner",
     "objective": "Start a friendly conversation with a new neighbour.",
-    "estimatedMinutes": 5
+    "estimatedMinutes": 5,
+    "sentenceCount": 6,
+    "exerciseCount": 12
   }
 ]
 ```
@@ -378,7 +381,7 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
 
 | Item           | Value                                         |
 | -------------- | --------------------------------------------- |
-| **Purpose**    | Get full lesson detail including steps         |
+| **Purpose**    | Get full lesson detail including stages and chat |
 | **Auth**       | Yes — `x-user-id` header                      |
 
 **Path Parameters**:
@@ -398,41 +401,35 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
   "level": "beginner",
   "objective": "Start a friendly conversation with a new neighbour.",
   "estimatedMinutes": 5,
-  "steps": [
+  "sentences": [
     {
-      "order": 1,
-      "type": "learn",
-      "phrases": [
-        {
-          "text": "Hi, I am your new neighbour.",
-          "hints": { "hi": "नमस्ते, मैं आपका नया पड़ोसी हूँ।" },
-          "tip": null
-        }
-      ]
-    },
-    {
-      "order": 2,
-      "type": "repeat",
-      "phraseIndexes": [0, 1, 2]
-    },
-    {
-      "order": 3,
-      "type": "roleplay",
-      "roleplay": {
-        "aiRole": "Neighbour",
-        "userRole": "New resident",
-        "situation": "You meet a neighbour outside your apartment building.",
-        "goal": "Introduce yourself and make a friendly first impression.",
-        "openingLine": "Hello! I have not seen you here before. Are you new to the building?",
-        "maxTurns": 4,
-        "targetPhrases": [
-          "Hi, I am your new neighbour.",
-          "I just moved in last week.",
-          "It is nice to meet you."
-        ]
-      }
+      "id": "s1",
+      "text": "Hi, I am your new neighbour.",
+      "hi": "नमस्ते, मैं आपका नया पड़ोसी हूँ।",
+      "tip": "Say \"neighbour\" as NAY-bur.",
+      "chunks": ["Hi,", "I am", "your new", "neighbour."]
     }
-  ]
+  ],
+  "stages": [
+    {
+      "id": "words",
+      "title": "Learn the words",
+      "intro": "Meet the words you will need.",
+      "exercises": [{ "id": "w1", "type": "match_pairs", "prompt": "Match each word.", "pairs": [{ "en": "neighbour", "hi": "पड़ोसी" }] }]
+    }
+  ],
+  "chat": {
+    "aiRole": "Neighbour",
+    "userRole": "New resident",
+    "situation": "You meet outside your building.",
+    "goal": "Introduce yourself.",
+    "turns": [{
+      "ai": "Are you new in the building?",
+      "sentenceId": "s1",
+      "hint": { "en": "Greet your neighbour.", "hi": "नमस्ते कहें।" }
+    }],
+    "closingLine": "Welcome to the building!"
+  }
 }
 ```
 
@@ -458,7 +455,7 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 
 | Item           | Value                                                |
 | -------------- | ---------------------------------------------------- |
-| **Purpose**    | Start a new conversation from a lesson's roleplay    |
+| **Purpose**    | Start a new conversation from a lesson's chat       |
 | **Auth**       | Yes — `x-user-id` header                             |
 
 **Request Body** (`application/json`):
@@ -466,12 +463,14 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 | Field      | Type     | Required | Validation                     |
 | ---------- | -------- | -------- | ------------------------------ |
 | `lessonId` | `string` | Yes      | Trimmed, min 1 char (ObjectId) |
+| `attemptId` | `string` | No      | An attempt for the same lesson and owner |
 
 **Success Response** — `201`:
 
 ```json
 {
   "conversationId": "665f1a2b3c4d5e6f7a8b9c10",
+  "attemptId": null,
   "status": "active",
   "messages": [
     {
@@ -479,9 +478,10 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
       "text": "Hello! I have not seen you here before. Are you new to the building?",
       "audioUrl": "/audio/a1b2c3d4-e5f6-7890-abcd-ef1234567890.wav",
       "createdAt": "2026-10-13T07:35:00.000Z"
+      ,"turnIndex": 0
     }
   ],
-  "turnsRemaining": 4
+  "turnsRemaining": 18
 }
 ```
 
@@ -492,15 +492,19 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 | Status | When                            | Message                          |
 | ------ | ------------------------------- | -------------------------------- |
 | 400    | Validation fails                | Zod issue message                |
-| 400    | Lesson has no roleplay step     | `"Lesson has no roleplay step"`  |
+| 400    | Lesson has no conversation turns | `"Lesson has no conversation turns"` |
 | 401    | Missing/invalid `x-user-id`    | `"Unauthorized"`                 |
 | 404    | Lesson not found / invalid ID  | `"Lesson not found"`             |
 
 **Side Effects**:
 - Creates a `Conversation` document with status `"active"`.
-- The AI opening message is the lesson's `roleplay.openingLine`.
+- The AI opening message is `chat.turns[0].ai`.
 - TTS is called to synthesize the opening line; audio is saved to disk.
 - A `SpeechLog` document is created for the TTS call.
+
+If `attemptId` is supplied, it is stored on the conversation and must belong
+to the same lesson and owner. Conversation responses include `attemptId`
+(`null` when absent).
 
 **Example curl**:
 
@@ -510,6 +514,8 @@ curl -X POST http://localhost:5000/api/conversations \
   -H "x-user-id: 665f1a2b3c4d5e6f7a8b9c0d" \
   -d '{ "lessonId": "665f1a2b3c4d5e6f7a8b9c0e" }'
 ```
+
+---
 
 ---
 
@@ -540,6 +546,11 @@ curl -X POST http://localhost:5000/api/conversations \
   "audioUrl": "/audio/b2c3d4e5-f6a7-8901-bcde-f12345678901.wav",
   "endConversation": false,
   "turnsRemaining": 3,
+  "progress": { "current": 2, "total": 5 },
+  "hasMistake": true,
+  "corrected": "I went to the market yesterday.",
+  "explanation": "Use \"went\" as the past tense of \"go\".",
+  "mistakeType": "tense",
   "correction": {
     "corrected": "I went to the market yesterday.",
     "explanation": "Use \"went\" as the past tense of \"go\".",
@@ -572,7 +583,9 @@ When `endConversation` is `true`, the conversation status changes to
 
 **Side Effects**:
 - Appends the user message to `conversation.messages` (atomic update with
-  guard against exceeding `maxTurns`).
+  guard against exceeding `chat.turns.length * 3`).
+- Scripted lessons compare the answer with the current turn target, return
+  progress and correction fields, and never call the LLM.
 - Calls the LLM provider to generate a response (validated JSON) which
   now includes correction fields alongside the reply.
 - Computes a `Correction` from the LLM output and attaches it to the user
@@ -729,7 +742,74 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 
 ---
 
-### 3.6 Speech — TTS
+### 3.6 Lesson Attempts
+
+All attempt endpoints require `x-user-id`.
+
+#### `POST /api/lessons/:lessonId/attempts`
+
+Creates an attempt and returns `201 { "attemptId": "..." }`.
+
+#### `POST /api/attempts/:attemptId/results`
+
+Request body:
+
+```json
+{
+  "exerciseId": "g3",
+  "result": "wrong",
+  "answer": "move",
+  "retry": false
+}
+```
+
+`result` is `correct | wrong` for `mcq`, `gap`, `listen_pick`, `order_words`,
+and `match_pairs`; it is `said | close | missed | skipped` for `speak`.
+`answer` is a string for MCQ/gap/listen-pick and an array of at most 30
+strings, each at most 40 characters, for order-words. The answer text, or
+the joined order-words answer, must be at most 500 characters. The server
+resolves `stageId` and exercise type from the stored lesson. A second
+non-retry submission returns `{ "recorded": false, "mistakeSaved": false }`.
+Retries only accept `correct` or `wrong`, update `retryResult`, and never
+create a mistake.
+
+Success response (`200`):
+
+```json
+{ "recorded": true, "mistakeSaved": true }
+```
+
+#### `POST /api/attempts/:attemptId/complete`
+
+Request body: `{ "bestStreak": 0 }`, where `bestStreak` is an integer from 0
+through 200. The `200` response is the same attempt object returned by the GET.
+
+#### `GET /api/attempts/:attemptId`
+
+Returns:
+
+```json
+{
+  "attemptId": "...",
+  "lessonId": "...",
+  "startedAt": "2026-10-27T00:00:00.000Z",
+  "completedAt": null,
+  "bestStreak": 0,
+  "results": [
+    { "exerciseId": "g3", "stageId": "sentences", "type": "gap", "result": "wrong", "retryResult": null }
+  ],
+  "mistakes": [
+    { "exerciseId": "g3", "original": "I just move in last week.", "corrected": "I just moved in last week.", "explanation": "...", "mistakeType": "tense" }
+  ]
+}
+```
+
+An exercise mistake is saved only for a first, non-retry `wrong` result with
+an exercise `mistakeType` and an answer. Mistake-bank records are deduplicated
+using the same user, lesson, original, corrected, and type key as conversation
+corrections.
+
+### 3.7 Speech — TTS
 
 #### `POST /api/speech/tts`
 
@@ -814,7 +894,7 @@ curl -X POST http://localhost:5000/api/speech/tts \
 
 ---
 
-### 3.7 Speech — STT
+### 3.8 Speech — STT
 
 #### `POST /api/speech/stt`
 
@@ -830,6 +910,7 @@ curl -X POST http://localhost:5000/api/speech/tts \
 | `audio`      | File   | Yes      | Max `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes). Must be a supported MIME type (see below); MIME parameters are tolerated. |
 | `language`   | string | No       | One of the STT language codes (see §4.5). Default: `"unknown"`. |
 | `provider`   | string | No       | One of: `"sarvam"`. Default: `env.STT_PROVIDER`.    |
+| `mode`       | string | No       | One of `"transcribe"`, `"verbatim"`, `"codemix"`, `"translit"`. Default: `env.SARVAM_STT_MODE`. |
 
 **Supported MIME Types** (validated by multer file filter after lowercasing,
 trimming, and removing MIME parameters):
@@ -850,6 +931,7 @@ to `audio/webm` before validation, provider upload, and logging.
   "text": "Hi, I am your new neighbour. I just moved in last week.",
   "languageCode": "en-IN",
   "provider": "sarvam",
+  "mode": "codemix",
   "totalMs": 2341,
   "durationSeconds": 4.5
 }
@@ -860,7 +942,8 @@ to `audio/webm` before validation, provider upload, and logging.
 | `text`           | `string`          | Transcribed text                           |
 | `languageCode`   | `string \| null`  | Detected/specified language code           |
 | `provider`       | `string`          | Provider used (`"sarvam"`)                 |
-| `totalMs`        | `number`          | Wall-clock time of the provider call (ms)  |
+| `mode`          | `string`       | Mode used for the transcription            |
+| `totalMs`        | `number`       | Wall-clock time of the provider call (ms)  |
 | `durationSeconds`| `number \| null`  | Duration of the input audio when metadata can determine it; otherwise `null` |
 
 The server first reads normal container metadata. If that is unavailable, it
@@ -899,7 +982,7 @@ curl -X POST http://localhost:5000/api/speech/stt \
 
 ---
 
-### 3.8 Mistakes
+### 3.9 Mistakes
 
 The mistake bank stores non-null corrections found during conversation turns
 and returns only the authenticated user's mistakes.
@@ -1011,39 +1094,42 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `level`            | string         | Yes      | Enum: `Level`                 |
 | `objective`        | string         | Yes      |                               |
 | `estimatedMinutes` | number         | Yes      |                               |
-| `steps`            | `LessonStep[]` | Yes      | Embedded array (see below)    |
+| `sentenceCount` | number | Yes | List response count |
+| `exerciseCount` | number | Yes | List response count |
+| `sentences`        | `Sentence[]`   | Yes      | Learner sentence source        |
+| `stages`           | `Stage[]`      | Yes      | Embedded array (see below)    |
+| `chat`             | `Chat`         | Yes      | Scripted conversation          |
 | `createdAt`        | Date           | Auto     |                               |
 | `updatedAt`        | Date           | Auto     |                               |
 
-**LessonStep**:
+**Sentence**:
 
-| Field          | Type              | Required | Notes                              |
-| -------------- | ----------------- | -------- | ---------------------------------- |
-| `order`        | number            | Yes      | Step sequence number               |
-| `type`         | string            | Yes      | `"learn"` \| `"repeat"` \| `"roleplay"` |
-| `phrases`      | `LessonPhrase[]`  | No       | Present on `learn` steps           |
-| `phraseIndexes`| `number[]`        | No       | Present on `repeat` steps          |
-| `roleplay`     | `RoleplayStep`    | No       | Present on `roleplay` steps        |
+| Field | Type | Required | Notes |
+| ----- | ---- | -------- | ----- |
+| `id` | string | Yes | Referenced by chat turns and speak exercises |
+| `text` | string | Yes | Sentence the learner says |
+| `hi` | string | Yes | Hindi meaning |
+| `tip` | string | Yes | Pronunciation or grammar tip |
+| `chunks` | string[] | Yes | Joins to `text` |
 
-**LessonPhrase**:
+**Stage**:
 
-| Field  | Type                                | Required | Notes                       |
-| ------ | ----------------------------------- | -------- | --------------------------- |
-| `text` | string                              | Yes      |                             |
-| `hints`| `Record<Language, string>` (partial)| No       | Keyed by language code      |
-| `tip`  | string                              | No       |                             |
+`{ id: "words" | "sentences"; title: string; intro: string; exercises: Exercise[] }`.
+Exercises are `mcq`, `gap`, `listen_pick`, `match_pairs`, `order_words`, or
+`speak`; see `docs/LESSON_CONTENT.md` for every field. Exercises include
+`correct` in lesson detail responses.
 
-**RoleplayStep**:
+**Chat**:
 
-| Field           | Type       | Required |
-| --------------- | ---------- | -------- |
-| `aiRole`        | string     | Yes      |
-| `userRole`      | string     | Yes      |
-| `situation`     | string     | Yes      |
-| `goal`          | string     | Yes      |
-| `openingLine`   | string     | Yes      |
-| `maxTurns`      | number     | Yes      |
-| `targetPhrases` | `string[]` | Yes      |
+`Chat` has `aiRole`, `userRole`, `situation`, `goal`, `turns`, and `closingLine`.
+Each detail response turn contains only `ai`, `sentenceId`, and `hint`.
+Authoring-only fields `repeat`, `alternatives`, and `knownMistakes` are not
+exposed.
+
+**Scripted chat authoring**:
+
+Each turn also has `repeat`, optional `alternatives`, and optional
+`knownMistakes`; `sentenceId` resolves the expected text from `sentences`.
 
 ### 4.3 Conversation
 
@@ -1057,6 +1143,7 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `startedAt`  | Date                        | Yes      | `Date.now`    |                           |
 | `endedAt`    | Date                        | No       | —             |                           |
 | `durationSec`| number                      | No       | —             | Min: 0                    |
+| `script`     | `{ turnIndex: number; attempts: number }` | No | `{ turnIndex: 0, attempts: 0 }` | Internal scripted state; not serialized |
 | `createdAt`  | Date                        | Auto     | —             |                           |
 | `updatedAt`  | Date                        | Auto     | —             |                           |
 
@@ -1069,6 +1156,9 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `audioUrl`   | string                | No       | `null`       | |
 | `correction` | `Correction` \| null  | No       | `null`       | User messages only. See `Correction` below. |
 | `createdAt`  | Date                  | Yes      | `Date.now`   | |
+| `turnIndex`   | number                | Yes      | `0`          | Script turn associated with the message |
+| `outcome`     | string                | No       | —            | User messages: `"exact"` \| `"close"` \| `"off"` \| `"moved_on"` |
+| `revealHint`  | boolean               | No       | —            | AI messages only |
 
 **Correction** (embedded in user messages when a mistake is found):
 
@@ -1091,6 +1181,7 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `chars`       | number   | No       | TTS: character count               |
 | `audioSeconds`| number   | No       | STT: input audio duration          |
 | `mimeType`    | string   | No       | STT: input audio MIME type         |
+| `mode`        | string   | No       | STT transcription mode used         |
 | `audioBytes`  | number   | Yes      |                                    |
 | `durationMs`  | number   | No       | TTS: generated audio duration (ms) |
 | `totalMs`     | number   | Yes      | Wall-clock provider call time (ms) |
@@ -1104,13 +1195,30 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | ---------------- | ---------- | -------- | ------- | ----- |
 | `_id`            | ObjectId   | Auto     | —       | |
 | `userId`         | ObjectId   | Yes      | —       | Reference to `User` |
-| `conversationId` | ObjectId   | Yes      | —       | Reference to `Conversation` |
+| `conversationId` | ObjectId   | No       | —       | Reference to `Conversation` |
+| `attemptId`      | ObjectId   | No       | —       | Reference to `LessonAttempt` |
 | `lessonId`       | ObjectId   | Yes      | —       | Reference to `Lesson` |
 | `original`       | string     | Yes      | —       | Trimmed; max 500 chars |
 | `corrected`      | string     | Yes      | —       | Trimmed; max 500 chars |
 | `explanation`    | string     | No       | `""`    | Trimmed; max 160 chars |
 | `type`           | MistakeType | Yes     | —       | |
-| `createdAt`      | Date       | Yes      | Auto    | Newest-first indexes by user |
+| `source`         | string      | Yes     | `"conversation"` | `"conversation"` or `"exercise"` |
+| `createdAt`      | Date        | Yes      | Auto    | Newest-first indexes by user |
+
+### 4.4 LessonAttempt
+
+| Field | Type | Required | Default | Notes |
+| ----- | ---- | -------- | ------- | ----- |
+| `lessonId` | ObjectId | Yes | — | Reference to `Lesson` |
+| `userId` | ObjectId | Yes | — | Attempt owner |
+| `startedAt` | Date | Yes | `Date.now` | |
+| `completedAt` | Date | No | — | Set by the complete endpoint |
+| `bestStreak` | integer | Yes | `0` | 0–200 |
+| `results` | `LessonAttemptResult[]` | Yes | `[]` | One first result per exercise |
+
+`LessonAttemptResult` contains `exerciseId`, `stageId`, `type`, `result`,
+optional `retryResult`, and optional saved mistake fields
+`original`, `corrected`, `explanation`, and `mistakeType`.
 
 ### 4.5 Enums
 
@@ -1204,9 +1312,12 @@ type Goal = "daily_conversation" | "work" | "interviews" | "travel" | "confidenc
 type LessonCategory = "daily" | "work" | "career" | "travel";
 type TtsLanguage = "en-IN" | "hi-IN" | "ta-IN" | "te-IN";
 type TtsProviderName = "kokoro" | "sarvam";
+type SttMode = "transcribe" | "verbatim" | "codemix" | "translit";
 type SttProviderName = "sarvam";
 type ConversationStatus = "active" | "completed" | "abandoned";
 type MessageRole = "user" | "ai";
+type LessonAttemptResultType = "correct" | "wrong" | "said" | "close" | "missed" | "skipped";
+type MistakeKind = "grammar" | "tense" | "preposition" | "word_choice";
 
 type SttLanguageCode =
   | "unknown" | "hi-IN" | "bn-IN" | "kn-IN" | "ml-IN" | "mr-IN"
@@ -1225,6 +1336,18 @@ interface OnboardingRequest {
 
 interface ConversationStartRequest {
   lessonId: string;
+  attemptId?: string;
+}
+
+interface AttemptResultRequest {
+  exerciseId: string;
+  result: LessonAttemptResultType;
+  answer?: string | string[];
+  retry?: boolean;
+}
+
+interface AttemptCompleteRequest {
+  bestStreak: number; // integer, 0–200
 }
 
 interface ConversationTurnRequest {
@@ -1243,6 +1366,7 @@ interface SttRequest {
   // multipart: "audio" file field
   language?: SttLanguageCode;
   provider?: SttProviderName;
+  mode?: SttMode;
 }
 
 // ── Response Bodies ─────────────────────────────────────────
@@ -1266,38 +1390,76 @@ interface LessonListItem {
   level: Level;
   objective: string;
   estimatedMinutes: number;
+  sentenceCount: number;
+  exerciseCount: number;
 }
 
 interface LessonDetail extends LessonListItem {
-  steps: LessonStep[];
+  sentences: Sentence[];
+  stages: Stage[];
+  chat: Chat;
 }
 
-interface LessonStep {
-  order: number;
-  type: "learn" | "repeat" | "roleplay";
-  phrases?: LessonPhrase[];
-  phraseIndexes?: number[];
-  roleplay?: RoleplayStep;
-}
-
-interface LessonPhrase {
+interface Sentence {
+  id: string;
   text: string;
-  hints: Partial<Record<Language, string>>;
-  tip?: string | null;
+  hi: string;
+  tip: string;
+  chunks: string[];
 }
 
-interface RoleplayStep {
+interface Stage {
+  id: "words" | "sentences";
+  title: string;
+  intro: string;
+  exercises: Exercise[];
+}
+
+type Exercise = McqExercise | GapExercise | ListenPickExercise |
+  MatchPairsExercise | OrderWordsExercise | SpeakExercise;
+
+interface McqExercise {
+  id: string; type: "mcq"; prompt: string; promptHi?: string;
+  options: string[]; correct: string; explanation: string; mistakeType?: MistakeKind;
+}
+interface GapExercise {
+  id: string; type: "gap"; sentence: string; hi: string;
+  options: string[]; correct: string; explanation: string; mistakeType?: MistakeKind;
+}
+interface ListenPickExercise {
+  id: string; type: "listen_pick"; prompt: string; text: string;
+  options: string[]; correct: string; explanation: string;
+}
+interface MatchPairsExercise {
+  id: string; type: "match_pairs"; prompt: string;
+  pairs: { en: string; hi: string }[];
+}
+interface OrderWordsExercise {
+  id: string; type: "order_words"; promptHi: string; answer: string;
+  extraWords?: string[]; explanation: string; mistakeType?: MistakeKind;
+}
+interface SpeakExercise {
+  id: string; type: "speak"; sentenceId: string;
+}
+
+interface Chat {
   aiRole: string;
   userRole: string;
   situation: string;
   goal: string;
-  openingLine: string;
-  maxTurns: number;
-  targetPhrases: string[];
+  turns: ChatTurn[];
+  closingLine: string;
+}
+
+interface ChatTurn {
+  ai: string;
+  sentenceId: string;
+  hint: { en: string; hi: string };
 }
 
 interface ConversationStartResponse {
   conversationId: string;
+  attemptId: string | null;
   status: ConversationStatus;
   messages: ConversationMessage[];
   turnsRemaining: number;
@@ -1308,12 +1470,18 @@ interface ConversationTurnResponse {
   audioUrl: string | null;
   endConversation: boolean;
   turnsRemaining: number;
+  progress: { current: number; total: number };
+  hasMistake: boolean;
+  corrected: string;
+  explanation: string;
+  mistakeType: MistakeType;
   correction: Correction | null;
   feedback: ConversationFeedback | null;
 }
 
 interface ConversationEndResponse {
   conversationId: string;
+  attemptId: string | null;
   status: ConversationStatus;
   durationSec: number;
   userTurns: number;
@@ -1323,6 +1491,7 @@ interface ConversationEndResponse {
 interface ConversationGetResponse {
   conversationId: string;
   lessonId: string;
+  attemptId: string | null;
   status: ConversationStatus;
   messages: ConversationMessage[];
   startedAt: string;              // ISO 8601
@@ -1336,10 +1505,35 @@ interface ConversationMessage {
   text: string;
   audioUrl: string | null;
   correction?: Correction | null; // user messages only
+  turnIndex: number;
+  outcome?: "exact" | "close" | "off" | "moved_on"; // user messages only
+  revealHint?: boolean; // AI messages only
   createdAt: string;              // ISO 8601
 }
 
 type MistakeType = "grammar" | "tense" | "preposition" | "word_choice" | "other";
+
+interface LessonAttemptResponse {
+  attemptId: string;
+  lessonId: string;
+  startedAt: string;
+  completedAt: string | null;
+  bestStreak: number;
+  results: Array<{
+    exerciseId: string;
+    stageId: "words" | "sentences";
+    type: string;
+    result: LessonAttemptResultType;
+    retryResult?: "correct" | "wrong";
+  }>;
+  mistakes: Array<{
+    exerciseId: string;
+    original: string;
+    corrected: string;
+    explanation: string;
+    mistakeType: MistakeKind;
+  }>;
+}
 
 interface Correction {
   corrected: string;
@@ -1398,6 +1592,7 @@ interface SttResponse {
   text: string;
   languageCode: string | null;
   provider: SttProviderName;
+  mode: SttMode;
   totalMs: number;
   durationSeconds: number | null;
 }
@@ -1480,7 +1675,7 @@ sequenceDiagram
    with `x-user-id`
 2. **Server** → `200 [LessonListItem, ...]`
 3. **Client** → `GET /api/lessons/:id` with `x-user-id` to load full lesson
-   detail (steps, phrases, roleplay).
+   detail (sentences, stages, chat).
 
 ```mermaid
 sequenceDiagram
@@ -1506,7 +1701,7 @@ the conversation.
 **Sequence**:
 
 1. **Client** → `POST /api/conversations` with `{ lessonId }`
-   - **Server** finds the lesson's roleplay step
+   - **Server** loads the lesson's chat
    - **Server** calls TTS to synthesize the AI opening line
    - **Server** creates a `Conversation` document
    - Returns `{ conversationId, status, messages, turnsRemaining }`
@@ -1520,7 +1715,7 @@ the conversation.
    - Returns `{ text, ... }`
 
 5. **Client** → `POST /api/conversations/:id/turns` with `{ text }`
-   - **Server** appends user message (atomic, guarded by maxTurns)
+   - **Server** appends user message (atomic, guarded by the chat turn limit)
    - **Server** calls LLM to generate AI reply
    - **Server** calls TTS to synthesize AI reply
    - **Server** appends AI message
@@ -1548,7 +1743,7 @@ sequenceDiagram
     participant STT as STT Provider
 
     C->>S: POST /api/conversations<br/>{lessonId}
-    S->>TTS: synthesize(openingLine)
+    S->>TTS: synthesize(chat.turns[0].ai)
     TTS-->>S: audio buffer
     S-->>C: 201 {conversationId, messages[ai], turnsRemaining}
     Note over C: Play AI opening audio
@@ -1640,13 +1835,18 @@ requests share one file.
 
 **Sarvam (Saaras v3)**:
 - Model: `saaras:v3`
-- Mode: `verbatim`
+- Mode: configurable via `mode` request field or `SARVAM_STT_MODE` (default: `codemix`)
+- Modes: `transcribe`, `verbatim`, `codemix`, `translit`
 - Supports 24 Indian language codes (see §4.5)
-- Accepts many audio formats (see §3.7)
+- Accepts many audio formats (see §3.8)
 - Timeout: `SARVAM_STT_TIMEOUT_MS` (default: 15000)
 - Max file size: `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB)
 - Max duration: `STT_MAX_DURATION_SECONDS` (default: 30 seconds)
 - Supports raw PCM codecs: `pcm_s16le`, `pcm_l16`, `pcm_raw`
+
+When an English-language request returns letters but no Latin letters, the
+service retries once with `translit` and uses that transcript if the retry
+succeeds. If the fallback fails, the original result is retained.
 
 ### 6.4 LLM Provider Details
 
@@ -1680,6 +1880,7 @@ All environment variable **names** (never values):
 | `LLM_PROVIDER`             | Yes (AI reply quality)    | `"mock"` \| `"sarvam"`                   |
 | `TTS_PROVIDER`             | Yes (default TTS)         | `"kokoro"` \| `"sarvam"`                |
 | `STT_PROVIDER`             | Yes (default STT)         | `"sarvam"`                               |
+| `SARVAM_STT_MODE`          | Yes (default STT mode)    | `"transcribe"` \| `"verbatim"` \| `"codemix"` \| `"translit"`; default: `"codemix"` |
 | `SARVAM_API_KEY`           | No (secret)               | Required when any provider is `sarvam`   |
 | `SARVAM_LLM_MODEL`        | Yes (reply behavior)      | `"sarvam-105b"` \| `"sarvam-105b-conversations"` |
 | `SARVAM_TTS_VOICE`         | Yes (conversation voice)  | Used in conversation TTS calls           |
@@ -1702,7 +1903,7 @@ All environment variable **names** (never values):
 | STT max file size               | `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes) |
 | STT max audio duration          | 30 seconds                     |
 | Unknown metadata duration       | Full scan once when within the file-size cap; otherwise Sarvam is the 30-second backstop |
-| STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.7) |
+| STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.8) |
 | Recommended recording format    | 16 kHz mono WAV                |
 | TTS output format               | WAV (both providers)           |
 
@@ -1729,8 +1930,18 @@ All environment variable **names** (never values):
 
 | Constraint                      | Value                          |
 | ------------------------------- | ------------------------------ |
-| Max user turns per conversation | `roleplay.maxTurns` (per lesson; typically 4–5) |
+| Max user turns per conversation | `chat.turns.length * 3` |
+| Scripted lesson attempts per turn | 3; after the third off-target answer the script moves on |
 | LLM context window              | Last 10 messages (sliding window) |
+
+### 7.5 Scripted lessons
+
+Lessons with chat turns are deterministic scripted conversations. The server
+looks up each turn's sentence by `sentenceId`, accepts alternatives as exact,
+uses known mistakes before word-diff explanations, and provides up to three
+attempts. An answer matching another turn is deferred with
+`Good sentence, but not yet.` These turns do not call the LLM; TTS is still
+generated for the scripted AI reply.
 
 ---
 
@@ -1868,10 +2079,10 @@ not exist yet**. Do not build frontend features that depend on these.
 | `POST /api/conversations/:id/turns`   | ✅ §3.5     |
 | `POST /api/conversations/:id/end`     | ✅ §3.5     |
 | `GET /api/conversations/:id`          | ✅ §3.5     |
-| `POST /api/speech/tts`                | ✅ §3.6     |
-| `POST /api/speech/stt`                | ✅ §3.7     |
-| `GET /api/mistakes`                   | ✅ §3.8     |
-| `GET /api/mistakes/summary`           | ✅ §3.8     |
+| `POST /api/speech/tts`                | ✅ §3.7     |
+| `POST /api/speech/stt`                | ✅ §3.8     |
+| `GET /api/mistakes`                   | ✅ §3.9     |
+| `GET /api/mistakes/summary`           | ✅ §3.9     |
 | `GET /audio/*` (static)               | ✅ §1       |
 
 ### Endpoints listed in AGENT.md but **NOT** in code:

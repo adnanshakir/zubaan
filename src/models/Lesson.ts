@@ -1,160 +1,80 @@
 import { model, Schema, type InferSchemaType } from 'mongoose';
-import {
-  lessonCategories,
-  levels,
-  type Language,
-  type LessonCategory,
-  type Level,
-} from '../types/content.js';
+import { lessonCategories, levels } from '../types/content.js';
 
-export type LessonPhrase = {
-  text: string;
-  hints: Partial<Record<Language, string>>;
-  tip?: string;
-};
-
-export type RoleplayStep = {
-  aiRole: string;
-  userRole: string;
-  situation: string;
-  goal: string;
-  openingLine: string;
-  maxTurns: number;
-  targetPhrases: string[];
-};
-
-export type LessonStep = {
-  order: number;
-  type: 'learn' | 'repeat' | 'roleplay';
-  phrases?: LessonPhrase[];
-  phraseIndexes?: number[];
-  roleplay?: RoleplayStep;
-};
-
-export type LessonSeed = {
-  slug: string;
-  title: string;
-  category: LessonCategory;
-  level: Level;
-  objective: string;
-  estimatedMinutes: number;
-  steps: LessonStep[];
-};
-
-const phraseSchema = new Schema(
+const sentenceSchema = new Schema(
   {
-    text: {
-      type: String,
-      required: true,
-    },
-    hints: {
-      type: Map,
-      of: String,
-      default: {},
-    },
-    tip: {
-      type: String,
-    },
+    id: { type: String, required: true },
+    text: { type: String, required: true },
+    hi: { type: String, required: true },
+    tip: { type: String, required: true },
+    chunks: { type: [String], required: true },
   },
   { _id: false },
 );
 
-const roleplaySchema = new Schema(
+const stageSchema = new Schema(
   {
-    aiRole: {
-      type: String,
-      required: true,
-    },
-    userRole: {
-      type: String,
-      required: true,
-    },
-    situation: {
-      type: String,
-      required: true,
-    },
-    goal: {
-      type: String,
-      required: true,
-    },
-    openingLine: {
-      type: String,
-      required: true,
-    },
-    maxTurns: {
-      type: Number,
-      required: true,
-    },
-    targetPhrases: {
-      type: [String],
-      required: true,
-    },
+    id: { type: String, enum: ['words', 'sentences'], required: true },
+    title: { type: String, required: true },
+    intro: { type: String, required: true },
+    exercises: { type: [Schema.Types.Mixed], required: true },
   },
   { _id: false },
 );
 
-const lessonStepSchema = new Schema(
+const knownMistakeSchema = new Schema(
   {
-    order: {
-      type: Number,
-      required: true,
-    },
+    wrong: { type: String, required: true },
+    explanation: { type: String, required: true },
     type: {
       type: String,
-      enum: ['learn', 'repeat', 'roleplay'],
+      enum: ['grammar', 'tense', 'preposition', 'word_choice'],
       required: true,
     },
-    phrases: {
-      type: [phraseSchema],
+  },
+  { _id: false },
+);
+
+const chatTurnSchema = new Schema(
+  {
+    ai: { type: String, required: true },
+    sentenceId: { type: String, required: true },
+    alternatives: { type: [String] },
+    hint: {
+      en: { type: String, required: true },
+      hi: { type: String, required: true },
     },
-    phraseIndexes: {
-      type: [Number],
-    },
-    roleplay: {
-      type: roleplaySchema,
-    },
+    repeat: { type: String, required: true },
+    knownMistakes: { type: [knownMistakeSchema] },
+  },
+  { _id: false },
+);
+
+const chatSchema = new Schema(
+  {
+    aiRole: { type: String, required: true },
+    userRole: { type: String, required: true },
+    situation: { type: String, required: true },
+    goal: { type: String, required: true },
+    turns: { type: [chatTurnSchema], required: true },
+    closingLine: { type: String, required: true },
   },
   { _id: false },
 );
 
 const lessonSchema = new Schema(
   {
-    slug: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true,
-    },
-    title: {
-      type: String,
-      required: true,
-    },
-    category: {
-      type: String,
-      enum: lessonCategories,
-      required: true,
-    },
-    level: {
-      type: String,
-      enum: levels,
-      required: true,
-    },
-    objective: {
-      type: String,
-      required: true,
-    },
-    estimatedMinutes: {
-      type: Number,
-      required: true,
-    },
-    steps: {
-      type: [lessonStepSchema],
-      required: true,
-    },
+    slug: { type: String, required: true, unique: true, index: true },
+    title: { type: String, required: true },
+    category: { type: String, enum: lessonCategories, required: true },
+    level: { type: String, enum: levels, required: true },
+    objective: { type: String, required: true },
+    estimatedMinutes: { type: Number, required: true },
+    sentences: { type: [sentenceSchema], required: true },
+    stages: { type: [stageSchema], required: true },
+    chat: { type: chatSchema, required: true },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
 
 lessonSchema.index({ category: 1, level: 1 });

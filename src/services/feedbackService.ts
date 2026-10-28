@@ -68,12 +68,10 @@ export function buildFeedback(
   };
 }
 
-/** Target phrases come from the lesson's roleplay step. A missing lesson
- * or step must NOT fail the request, so it yields an empty list. */
+/** Target phrases come from the lesson sentences. */
 async function loadTargetPhrases(lessonId: Types.ObjectId | string): Promise<string[]> {
-  const lesson = await Lesson.findById(lessonId).select('steps').lean();
-  const roleplay = lesson?.steps.find((step) => step.type === 'roleplay')?.roleplay;
-  return roleplay?.targetPhrases ?? [];
+  const lesson = await Lesson.findById(lessonId).select('sentences').lean();
+  return lesson?.sentences.map((sentence) => sentence.text) ?? [];
 }
 
 /** Accepts a conversation (lean object or document). */

@@ -5,8 +5,6 @@ import type { SttProvider, SttSupportedMimeType } from './index.js';
 
 const SARVAM_STT_URL = 'https://api.sarvam.ai/speech-to-text';
 const SARVAM_STT_MODEL = 'saaras:v3';
-const SARVAM_STT_MODE = 'verbatim';
-
 const sarvamSttResponseSchema = z.object({
   transcript: z.string(),
   language_code: z.string().nullable().optional(),
@@ -111,7 +109,7 @@ export const sarvamSttProvider: SttProvider = {
       `audio.${fileExtensions[input.mimeType]}`,
     );
     form.append('model', SARVAM_STT_MODEL);
-    form.append('mode', SARVAM_STT_MODE);
+    form.append('mode', input.mode);
     form.append('language_code', input.languageCode ?? 'unknown');
 
     const pcmCodec = getRawPcmCodec(input.mimeType);

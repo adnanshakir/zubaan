@@ -18,6 +18,8 @@ export type LessonListItem = {
   level: Level;
   objective: string;
   estimatedMinutes: number;
+  sentenceCount: number;
+  exerciseCount: number;
 };
 
 type LessonFilters = {
@@ -33,6 +35,8 @@ export function toLessonListItem(lesson: {
   level: string;
   objective: string;
   estimatedMinutes: number;
+  sentences?: readonly unknown[];
+  stages?: readonly { exercises?: readonly unknown[] }[];
 }): LessonListItem {
   return {
     id: lesson._id.toString(),
@@ -42,12 +46,15 @@ export function toLessonListItem(lesson: {
     level: lesson.level as Level,
     objective: lesson.objective,
     estimatedMinutes: lesson.estimatedMinutes,
+    sentenceCount: lesson.sentences?.length ?? 0,
+    exerciseCount:
+      lesson.stages?.reduce((count, stage) => count + (stage.exercises?.length ?? 0), 0) ?? 0,
   };
 }
 
 export async function listLessons(filters: LessonFilters): Promise<LessonListItem[]> {
   const lessons = await Lesson.find(filters)
-    .select('slug title category level objective estimatedMinutes')
+    .select('slug title category level objective estimatedMinutes sentences stages')
     .lean();
 
   return lessons.map(toLessonListItem);
@@ -59,7 +66,7 @@ export async function getRecommended(
   const category = goalCategoryMap[user.goal as Goal];
   const userLevel = user.level as Level;
   const exactMatch = await Lesson.findOne({ category, level: userLevel })
-    .select('slug title category level objective estimatedMinutes')
+    .select('slug title category level objective estimatedMinutes sentences stages')
     .lean();
 
   if (exactMatch) {
@@ -67,7 +74,7 @@ export async function getRecommended(
   }
 
   const categoryLessons = await Lesson.find({ category })
-    .select('slug title category level objective estimatedMinutes')
+    .select('slug title category level objective estimatedMinutes sentences stages')
     .lean();
 
   if (categoryLessons.length > 0) {
@@ -83,7 +90,7 @@ export async function getRecommended(
   }
 
   const fallbackLesson = await Lesson.findOne()
-    .select('slug title category level objective estimatedMinutes')
+    .select('slug title category level objective estimatedMinutes sentences stages')
     .lean();
 
   return fallbackLesson ? toLessonListItem(fallbackLesson) : null;
@@ -94,7 +101,9 @@ export async function getLessonById(id: string) {
     throw new ApiError(404, 'Lesson not found');
   }
 
-  const lesson = await Lesson.findById(id).lean();
+  const lesson = await Lesson.findById(id)
+    .select('slug title category level objective estimatedMinutes sentences stages chat')
+    .lean();
 
   if (!lesson) {
     throw new ApiError(404, 'Lesson not found');
@@ -102,6 +111,19 @@ export async function getLessonById(id: string) {
 
   return {
     ...toLessonListItem(lesson),
-    steps: lesson.steps,
+    sentences: lesson.sentences,
+    stages: lesson.stages,
+    chat: {
+      aiRole: lesson.chat.aiRole,
+      userRole: lesson.chat.userRole,
+      situation: lesson.chat.situation,
+      goal: lesson.chat.goal,
+      turns: lesson.chat.turns.map((turn) => ({
+        ai: turn.ai,
+        sentenceId: turn.sentenceId,
+        hint: turn.hint,
+      })),
+      closingLine: lesson.chat.closingLine,
+    },
   };
 }
