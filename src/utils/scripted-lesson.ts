@@ -331,32 +331,31 @@ export function stepScript(
     return otherSentence !== undefined && matchedWordRatio(otherSentence.text, userText) >= 0.8;
   });
   if (check.outcome === 'off' && otherTurnMatch) {
-    return {
-      reply: `Good sentence, but not yet. ${turn.repeat}`,
-      state: { turnIndex: state.turnIndex, attempts },
-      finished: false,
-      outcome: 'off',
-      revealHint: false,
-      check,
-    };
+    if (attempts < MAX_ATTEMPTS) {
+      return {
+        reply: turn.repeat,
+        state: { turnIndex: state.turnIndex, attempts },
+        finished: false,
+        outcome: 'off',
+        revealHint: attempts >= 2,
+        check,
+      };
+    }
   }
   const moveOn = check.outcome !== 'off' || attempts >= MAX_ATTEMPTS;
   if (!moveOn) {
-    const second = attempts >= 2;
     return {
-      reply: second ? `Let's try it together. Say: "${sentence.text}"` : turn.repeat,
+      reply: turn.repeat,
       state: { turnIndex: state.turnIndex, attempts },
       finished: false,
       outcome: 'off',
-      revealHint: second,
+      revealHint: attempts >= 2,
       check,
     };
   }
   const next = turns[state.turnIndex + 1];
-  const lead =
-    check.outcome === 'off' ? `Let's keep going. You could say: "${sentence.text}". ` : '';
   return {
-    reply: `${lead}${next ? next.ai : chat.closingLine}`,
+    reply: next ? next.ai : chat.closingLine,
     state: { turnIndex: state.turnIndex + 1, attempts: 0 },
     finished: next === undefined,
     outcome: check.outcome === 'off' ? 'moved_on' : check.outcome,

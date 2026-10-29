@@ -302,6 +302,7 @@ export async function takeConversationTurn(
       explanation: step.check.explanation,
       mistakeType: step.check.mistakeType,
       correction,
+      revealHint: step.revealHint,
       feedback,
     };
   }
