@@ -557,6 +557,7 @@ curl -X POST http://localhost:5000/api/conversations \
     "explanation": "Use \"went\" as the past tense of \"go\".",
     "type": "tense"
   },
+  "revealHint": false,
   "feedback": null
 }
 ```
@@ -567,6 +568,11 @@ curl -X POST http://localhost:5000/api/conversations \
 present it contains the corrected sentence, a short explanation, and a
 mistake type. See `Correction` in §4.
 `feedback` is `null` unless this turn completed the conversation.
+`revealHint` (`boolean`) — scripted-lesson turns only. `true` when the
+learner's second consecutive off-target attempt triggers the repeat prompt,
+indicating the client should reveal the expected sentence hint. `false` on
+all other turns (including the first off-target attempt, close / exact
+matches, and non-scripted conversations).
 
 When `endConversation` is `true`, the conversation status changes to
 `"completed"` and no further turns can be taken.
@@ -961,7 +967,7 @@ duration then proceeds as `null`, with Sarvam enforcing its own 30-second limit.
 | 400    | Audio duration exceeds max                        | `"Sarvam STT REST supports up to 30 seconds per request"`           |
 | 400    | Sarvam rejects invalid audio input (422)            | `"Invalid audio input"`                                                |
 | 400    | Sarvam rejects audio exceeding its duration limit (422) | `"Sarvam STT REST supports up to 30 seconds per request"`            |
-| 422    | Audio is silent or shorter than 0.3 seconds       | `"We didn't hear anything. Check that your mic is on and try again."` (`code`: `"AUDIO_TOO_QUIET"`) |
+| 422    | WAV input evaluated by `measureWav`: peak amplitude below the silence threshold (< 0.03) or duration shorter than 0.3 seconds | `"We didn't hear anything. Check that your mic is on and try again."` (`code`: `"AUDIO_TOO_QUIET"`) |
 | 401    | Missing/invalid `x-user-id`                      | `"Unauthorized"`                                                     |
 | 429    | Sarvam rate limit                                 | `"STT provider rate limit exceeded"`                                 |
 | 500    | Provider not configured                           | `"STT provider is not configured"`                                   |

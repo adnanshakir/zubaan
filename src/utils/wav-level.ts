@@ -21,7 +21,18 @@ export function measureWav(buffer: Buffer): { durationSec: number; peak: number 
     if (chunkEnd > buffer.length) return null;
 
     if (chunkId === 'fmt ' && chunkSize >= 16) {
-      if (buffer.readUInt16LE(chunkDataOffset) !== 1) return null;
+      const formatTag = buffer.readUInt16LE(chunkDataOffset);
+      if (formatTag === 0xfffe) {
+        // WAVE_FORMAT_EXTENSIBLE: require cbSize >= 22 (full extensible header)
+        // and a PCM SubFormat GUID (first two bytes of the 16-byte GUID are 0x0001).
+        if (chunkSize < 40) return null;
+        const cbSize = buffer.readUInt16LE(chunkDataOffset + 16);
+        if (cbSize < 22) return null;
+        const subFormat = buffer.readUInt16LE(chunkDataOffset + 24);
+        if (subFormat !== 1) return null;
+      } else if (formatTag !== 1) {
+        return null;
+      }
       format = {
         channels: buffer.readUInt16LE(chunkDataOffset + 2),
         sampleRate: buffer.readUInt32LE(chunkDataOffset + 4),
