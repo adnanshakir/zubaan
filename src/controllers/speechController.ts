@@ -1,5 +1,4 @@
 import type { RequestHandler } from 'express';
-import { isSupportedSttMimeType } from '../providers/stt/index.js';
 import { ApiError } from '../utils/ApiError.js';
 import {
   synthesizeSpeechToStoredAudio,
@@ -31,13 +30,9 @@ export const transcribeStt: RequestHandler = async (req, res) => {
     throw new ApiError(400, 'audio file is required');
   }
 
-  if (!isSupportedSttMimeType(req.file.mimetype)) {
-    throw new ApiError(400, 'Unsupported audio format for STT');
-  }
-
   const input: TranscribeSpeechInput = {
     audio: req.file.buffer,
-    mimeType: req.file.mimetype,
+    mimeType: 'audio/wav',
     languageCode: body.language,
     provider: body.provider,
     mode: body.mode,

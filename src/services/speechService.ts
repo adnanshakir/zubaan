@@ -1,5 +1,4 @@
-import { parseBuffer } from 'music-metadata';
-import { env, getSttDurationLimitMessage } from '../config/env.js';
+import { env } from '../config/env.js';
 import { SpeechLog } from '../models/SpeechLog.js';
 import {
   getSttProvider,
@@ -19,6 +18,7 @@ import { KOKORO_DEFAULT_VOICE } from '../providers/tts/kokoro.js';
 import { SARVAM_MODEL } from '../providers/tts/sarvam.js';
 import { ApiError } from '../utils/ApiError.js';
 import { buildAudioCacheName, findCachedAudio, saveAudioAs } from '../utils/audioStorage.js';
+import { normalizeAudio } from '../utils/audio-normalize.js';
 import { logger } from '../utils/logger.js';
 import { measureWav } from '../utils/wav-level.js';
 
@@ -167,54 +167,8 @@ async function writeSttSpeechLog(entry: {
   }
 }
 
-const RAW_PCM_MIME_TYPES = new Set(['audio/pcm_s16le', 'audio/pcm_l16', 'audio/pcm_raw']);
-
-/** Sarvam requires raw PCM at 16 kHz, mono, 16-bit (signed LE). */
-const PCM_SAMPLE_RATE = 16_000;
-const PCM_CHANNELS = 1;
-const PCM_BYTES_PER_SAMPLE = 2;
-
 function isUsableDuration(value: number | undefined): value is number {
   return value !== undefined && Number.isFinite(value) && value > 0;
-}
-
-async function readParsedAudioDuration(
-  audio: Buffer,
-  mimeType: SttSupportedMimeType,
-  fullScan: boolean,
-): Promise<number | null> {
-  try {
-    const metadata = await parseBuffer(
-      audio,
-      { mimeType, size: audio.length },
-      { duration: fullScan },
-    );
-
-    return isUsableDuration(metadata.format.duration) ? metadata.format.duration : null;
-  } catch {
-    return null;
-  }
-}
-
-async function readAudioDurationSeconds(
-  audio: Buffer,
-  mimeType: SttSupportedMimeType,
-): Promise<number | null> {
-  if (RAW_PCM_MIME_TYPES.has(mimeType)) {
-    const bytesPerSecond = PCM_SAMPLE_RATE * PCM_CHANNELS * PCM_BYTES_PER_SAMPLE;
-    const durationSeconds = audio.length / bytesPerSecond;
-
-    return isUsableDuration(durationSeconds) ? durationSeconds : null;
-  }
-
-  const durationSeconds = await readParsedAudioDuration(audio, mimeType, false);
-
-  if (durationSeconds !== null || audio.length > env.STT_MAX_FILE_SIZE_BYTES) {
-    return durationSeconds;
-  }
-
-  // MediaRecorder WebM blobs may omit header duration; scan the bounded buffer once before deferring to Sarvam.
-  return readParsedAudioDuration(audio, mimeType, true);
 }
 
 export async function synthesizeSpeech(
@@ -360,31 +314,39 @@ export async function transcribeSpeech(
     throw new ApiError(400, 'audio file is required');
   }
 
-  const durationSeconds = await readAudioDurationSeconds(input.audio, input.mimeType);
-
-  if (durationSeconds !== null && durationSeconds > env.STT_MAX_DURATION_SECONDS) {
-    throw new ApiError(400, getSttDurationLimitMessage());
-  }
-
-  const wavLevel = measureWav(input.audio);
-  if (wavLevel !== null && (wavLevel.peak < 0.03 || wavLevel.durationSec < 0.3)) {
-    throw new ApiError(
-      422,
-      "We didn't hear anything. Check that your mic is on and try again.",
-      'AUDIO_TOO_QUIET',
-    );
-  }
-
   const providerName = resolveSttProviderName(input.provider);
   const provider = getSttProvider(providerName);
   const startedAt = Date.now();
   const languageCode = input.languageCode ?? 'unknown';
   const requestedMode = input.mode ?? env.SARVAM_STT_MODE;
+  let normalizedAudio: Buffer | null = null;
+  let durationSeconds: number | null = null;
+  let sourceFormat = 'unknown';
 
   try {
+    const normalized = await normalizeAudio(input.audio);
+    normalizedAudio = normalized.wav;
+    sourceFormat = normalized.sourceFormat;
+    const wavLevel = measureWav(normalizedAudio);
+    if (wavLevel === null) {
+      throw new ApiError(
+        422,
+        "We didn't hear anything. Check that your mic is on and try again.",
+        'AUDIO_TOO_QUIET',
+      );
+    }
+    durationSeconds = wavLevel.durationSec;
+    if (wavLevel.peak < 0.03 || wavLevel.durationSec < 0.3) {
+      throw new ApiError(
+        422,
+        "We didn't hear anything. Check that your mic is on and try again.",
+        'AUDIO_TOO_QUIET',
+      );
+    }
+
     const firstOutput = await provider.transcribe({
-      audio: input.audio,
-      mimeType: input.mimeType,
+      audio: normalizedAudio,
+      mimeType: 'audio/wav',
       languageCode,
       mode: requestedMode,
     });
@@ -410,8 +372,8 @@ export async function transcribeSpeech(
 
       try {
         const retryOutput = await provider.transcribe({
-          audio: input.audio,
-          mimeType: input.mimeType,
+          audio: normalizedAudio,
+          mimeType: 'audio/wav',
           languageCode,
           mode: 'translit',
         });
@@ -432,9 +394,9 @@ export async function transcribeSpeech(
     await writeSttSpeechLog({
       provider: providerName,
       languageCode,
-      mimeType: input.mimeType,
+      mimeType: 'audio/wav',
       audioSeconds: resolvedDurationSeconds,
-      audioBytes: input.audio.length,
+      audioBytes: normalizedAudio.length,
       mode,
       totalMs,
       ok: true,
@@ -448,8 +410,9 @@ export async function transcribeSpeech(
         languageCodeReceived: output.languageCode,
         mode,
         totalMs,
-        mimeType: input.mimeType,
-        audioBytes: input.audio.length,
+        mimeType: 'audio/wav',
+        sourceFormat,
+        audioBytes: normalizedAudio.length,
       },
       'Speech provider call completed',
     );
@@ -469,9 +432,9 @@ export async function transcribeSpeech(
     await writeSttSpeechLog({
       provider: providerName,
       languageCode,
-      mimeType: input.mimeType,
+      mimeType: 'audio/wav',
       audioSeconds: durationSeconds,
-      audioBytes: input.audio.length,
+      audioBytes: normalizedAudio?.length ?? input.audio.length,
       mode: requestedMode,
       totalMs,
       ok: false,
@@ -483,8 +446,9 @@ export async function transcribeSpeech(
         kind: 'stt',
         provider: providerName,
         totalMs,
-        mimeType: input.mimeType,
-        audioBytes: input.audio.length,
+        mimeType: 'audio/wav',
+        sourceFormat,
+        audioBytes: normalizedAudio?.length ?? input.audio.length,
       },
       'Speech provider call failed',
     );

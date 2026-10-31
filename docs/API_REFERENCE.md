@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-28
+> **Last verified against code**: 2026-10-31
 
 ---
 
@@ -109,7 +109,7 @@ The `error` object contains a `message` and may include a machine-readable
 | ---- | -------------------------------------------------------------- |
 | 200  | Success                                                        |
 | 201  | Resource created (onboarding, conversation start)              |
-| 400  | Validation error, bad input, unsupported format, duration exceeded |
+| 400  | Validation error or bad input                              |
 | 401  | Missing or invalid `x-user-id` header                          |
 | 422  | Validation failed for an otherwise valid request               |
 | 404  | Resource not found (lesson, conversation)                      |
@@ -914,22 +914,16 @@ curl -X POST http://localhost:5000/api/speech/tts \
 
 | Form Field   | Type   | Required | Validation / Constraints                            |
 | ------------ | ------ | -------- | --------------------------------------------------- |
-| `audio`      | File   | Yes      | Max `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes). Must be a supported MIME type (see below); MIME parameters are tolerated. |
+| `audio`      | File   | Yes      | Max `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes). Format is detected from the file bytes. |
 | `language`   | string | No       | One of the STT language codes (see §4.5). Default: `"unknown"`. |
 | `provider`   | string | No       | One of: `"sarvam"`. Default: `env.STT_PROVIDER`.    |
 | `mode`       | string | No       | One of `"transcribe"`, `"verbatim"`, `"codemix"`, `"translit"`. Default: `env.SARVAM_STT_MODE`. |
 
-**Supported MIME Types** (validated by multer file filter after lowercasing,
-trimming, and removing MIME parameters):
-
-`audio/mpeg`, `audio/mp3`, `audio/mpeg3`, `audio/x-mpeg-3`, `audio/x-mp3`,
-`audio/wav`, `audio/x-wav`, `audio/wave`, `audio/aac`, `audio/x-aac`,
-`audio/aiff`, `audio/x-aiff`, `audio/ogg`, `audio/opus`, `audio/flac`,
-`audio/x-flac`, `audio/mp4`, `audio/x-m4a`, `audio/amr`, `audio/x-ms-wma`,
-`audio/webm`, `audio/pcm_s16le`, `audio/pcm_l16`, `audio/pcm_raw`
-
-For example, a browser upload labelled `Audio/WebM; codecs=opus` is normalized
-to `audio/webm` before validation, provider upload, and logging.
+**Accepted formats** are WAV, M4A/AAC, MP3, OGG, WebM, FLAC, AMR, and CAF.
+Detection uses the uploaded bytes rather than the client MIME type or filename,
+so `application/octet-stream` and incorrect filenames are supported. The server
+converts accepted audio to a 16 kHz, mono, 16-bit PCM WAV before sending it to
+the STT provider. Recommended client format: **m4a or wav, 16 kHz mono is best**.
 
 **Success Response** — `200`:
 
@@ -953,18 +947,19 @@ to `audio/webm` before validation, provider upload, and logging.
 | `totalMs`        | `number`       | Wall-clock time of the provider call (ms)  |
 | `durationSeconds`| `number \| null`  | Duration of the input audio when metadata can determine it; otherwise `null` |
 
-The server first reads normal container metadata. If that is unavailable, it
-performs one full scan while the upload is within the file-size cap; an unknown
-duration then proceeds as `null`, with Sarvam enforcing its own 30-second limit.
+The server normalizes audio before checking duration and silence. The response
+shape is unchanged; `totalMs` includes normalization, validation, and provider
+work.
 
 **Error Responses**:
 
 | Status | When                                              | Message                                                              |
 | ------ | ------------------------------------------------- | -------------------------------------------------------------------- |
 | 400    | No file uploaded                                  | `"audio file is required"`                                           |
-| 400    | Unsupported MIME type                             | `"Unsupported audio format for STT"`                                 |
 | 400    | File exceeds size limit                           | `"Audio file exceeds <STT_MAX_FILE_SIZE_BYTES> bytes"`                |
-| 400    | Audio duration exceeds max                        | `"Sarvam STT REST supports up to 30 seconds per request"`           |
+| 415    | Unsupported audio bytes                          | `"Unsupported audio format. Send WAV, M4A/AAC, MP3, OGG, WebM, FLAC, AMR or CAF."` (`code`: `"UNSUPPORTED_AUDIO_FORMAT"`) |
+| 422    | Audio cannot be decoded or transcoded             | `"We couldn't read that audio. Please record again."` (`code`: `"AUDIO_UNREADABLE"`) |
+| 413    | Audio duration exceeds max                        | `"Audio exceeds the maximum duration."` (`code`: `"AUDIO_TOO_LONG"`) |
 | 400    | Sarvam rejects invalid audio input (422)            | `"Invalid audio input"`                                                |
 | 400    | Sarvam rejects audio exceeding its duration limit (422) | `"Sarvam STT REST supports up to 30 seconds per request"`            |
 | 422    | WAV input evaluated by `measureWav`: peak amplitude below the silence threshold (< 0.03) or duration shorter than 0.3 seconds | `"We didn't hear anything. Check that your mic is on and try again."` (`code`: `"AUDIO_TOO_QUIET"`) |

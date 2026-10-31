@@ -1592,7 +1592,7 @@
               }
             ],
             "url": "{{baseUrl}}/speech/stt",
-            "description": "COSTS MONEY unless the mock provider is on (STT_PROVIDER=sarvam still needs a provider key). Auth: required via the x-user-id header, which must be a real MongoDB ObjectId belonging to an onboarded user. Multipart fields: audio (file, required, supported audio MIME, max 10 MB); language (string, optional); provider (string, optional, sarvam); mode (string, optional, transcribe/verbatim/codemix/translit).",
+            "description": "COSTS MONEY unless the mock provider is on (STT_PROVIDER=sarvam still needs a provider key). Auth: required via the x-user-id header, which must be a real MongoDB ObjectId belonging to an onboarded user. Multipart fields: audio (file, required, max 10 MB; bytes are detected, so the MIME type and filename may be wrong; accepted formats are WAV, M4A/AAC, MP3, OGG, WebM, FLAC, AMR, and CAF); language (string, optional); provider (string, optional, sarvam); mode (string, optional, transcribe/verbatim/codemix/translit). The server converts audio to 16 kHz mono WAV. Recommended client format: m4a or wav, 16 kHz mono is best.",
             "body": {
               "mode": "formdata",
               "formdata": [
