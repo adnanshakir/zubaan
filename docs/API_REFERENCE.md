@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-31
+> **Last verified against code**: 2026-11-01
 
 ---
 
@@ -341,6 +341,7 @@ curl http://localhost:5000/api/home \
 | ---------- | -------- | -------- | --------------------------------------------------------------- |
 | `category` | `string` | No       | One of: `"daily"`, `"work"`, `"career"`, `"travel"`             |
 | `level`    | `string` | No       | One of: `"beginner"`, `"elementary"`, `"intermediate"`, `"advanced"` |
+| `lang`     | `string` | No       | Supported language; defaults to the user's native language, then `"hi"` |
 
 **Success Response** — `200`:
 
@@ -352,6 +353,9 @@ curl http://localhost:5000/api/home \
     "title": "Introduce yourself to a new neighbour",
     "category": "daily",
     "level": "beginner",
+    "unit": "introductions",
+    "order": 1,
+    "canDo": "I can introduce myself to a new neighbour.",
     "objective": "Start a friendly conversation with a new neighbour.",
     "estimatedMinutes": 5,
     "sentenceCount": 6,
@@ -391,6 +395,12 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
 | ----- | -------- | -------- | ------------------------------ |
 | `id`  | `string` | Yes      | Trimmed, min 1 char (ObjectId) |
 
+**Query Parameters**:
+
+| Param  | Type     | Required | Validation |
+|--------|----------|----------|------------|
+| `lang` | `string` | No       | Supported language; defaults to the user's native language, then `"hi"` |
+
 **Success Response** — `200`:
 
 ```json
@@ -400,6 +410,10 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
   "title": "Introduce yourself to a new neighbour",
   "category": "daily",
   "level": "beginner",
+  "unit": "introductions",
+  "order": 1,
+  "canDo": "I can introduce myself to a new neighbour.",
+  "focus": "polite questions",
   "objective": "Start a friendly conversation with a new neighbour.",
   "estimatedMinutes": 5,
   "sentences": [
@@ -407,6 +421,7 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
       "id": "s1",
       "text": "Hi, I am your new neighbour.",
       "hi": "नमस्ते, मैं आपका नया पड़ोसी हूँ।",
+      "meaning": "नमस्ते, मैं आपका नया पड़ोसी हूँ।",
       "tip": "Say \"neighbour\" as NAY-bur.",
       "chunks": ["Hi,", "I am", "your new", "neighbour."]
     }
@@ -427,7 +442,7 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
     "turns": [{
       "ai": "Are you new in the building?",
       "sentenceId": "s1",
-      "hint": { "en": "Greet your neighbour.", "hi": "नमस्ते कहें।" }
+      "hint": { "en": "Greet your neighbour.", "hi": "नमस्ते कहें।", "native": "नमस्ते कहें।" }
     }],
     "closingLine": "Welcome to the building!"
   }
@@ -440,6 +455,8 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
 | ------ | ----------------------------- | ---------------------- |
 | 401    | Missing/invalid `x-user-id`  | `"Unauthorized"`       |
 | 404    | Invalid ObjectId or not found | `"Lesson not found"`   |
+| 400    | Requested language is unsupported | Error code `"LANG_NOT_SUPPORTED"` |
+| 404    | Lesson translation is missing | Error code `"TRANSLATION_NOT_FOUND"` |
 
 **Example curl**:
 
@@ -1395,9 +1412,14 @@ interface LessonListItem {
   estimatedMinutes: number;
   sentenceCount: number;
   exerciseCount: number;
+  unit: string;
+  order: number;
+  canDo: string;
 }
 
 interface LessonDetail extends LessonListItem {
+  focus: string;
+  lang: string;
   sentences: Sentence[];
   stages: Stage[];
   chat: Chat;
@@ -1407,6 +1429,7 @@ interface Sentence {
   id: string;
   text: string;
   hi: string;
+  meaning: string;
   tip: string;
   chunks: string[];
 }
@@ -1457,7 +1480,7 @@ interface Chat {
 interface ChatTurn {
   ai: string;
   sentenceId: string;
-  hint: { en: string; hi: string };
+  hint: { en: string; hi: string; native: string };
 }
 
 interface ConversationStartResponse {

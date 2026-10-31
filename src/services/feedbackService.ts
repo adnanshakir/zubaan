@@ -1,7 +1,9 @@
 import type { Types } from 'mongoose';
 import { normalizeText, type MistakeType } from '../utils/text.js';
 import type { Correction } from './conversationLlmService.js';
-import { Lesson } from '../models/Lesson.js';
+import { User } from '../models/User.js';
+import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
+import { ApiError } from '../utils/ApiError.js';
 
 export interface FeedbackMessage {
   role: 'user' | 'ai';
@@ -69,17 +71,26 @@ export function buildFeedback(
 }
 
 /** Target phrases come from the lesson sentences. */
-async function loadTargetPhrases(lessonId: Types.ObjectId | string): Promise<string[]> {
-  const lesson = await Lesson.findById(lessonId).select('sentences').lean();
-  return lesson?.sentences.map((sentence) => sentence.text) ?? [];
+async function loadTargetPhrases(
+  lessonId: Types.ObjectId | string,
+  userId: Types.ObjectId | string,
+): Promise<string[]> {
+  const conversationUser = await User.findById(userId).select('nativeLanguage').lean();
+  if (!conversationUser) throw new ApiError(404, 'User not found');
+  const lesson = await getBuiltLesson(
+    lessonId.toString(),
+    resolveLang(undefined, conversationUser),
+  );
+  return lesson.sentences.map((sentence) => sentence.text);
 }
 
 /** Accepts a conversation (lean object or document). */
 export async function buildConversationFeedback(conversation: {
   lessonId: Types.ObjectId | string;
+  userId: Types.ObjectId | string;
   messages: readonly FeedbackMessage[];
   durationSec?: number | null;
 }): Promise<ConversationFeedback> {
-  const targetPhrases = await loadTargetPhrases(conversation.lessonId);
+  const targetPhrases = await loadTargetPhrases(conversation.lessonId, conversation.userId);
   return buildFeedback(conversation.messages, targetPhrases, conversation.durationSec ?? null);
 }

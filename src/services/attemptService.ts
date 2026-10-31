@@ -1,5 +1,8 @@
 import { isValidObjectId, type Types } from 'mongoose';
 import { Lesson } from '../models/Lesson.js';
+import type { UserDocument } from '../models/User.js';
+import { User } from '../models/User.js';
+import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
 import { LessonAttempt, type LessonAttemptDocument } from '../models/LessonAttempt.js';
 import { createMistake } from './mistakeService.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -16,7 +19,7 @@ type Exercise = {
   explanation?: string;
 };
 
-type Stage = { id: string; exercises: Exercise[] };
+type Stage = { id: string; exercises: readonly Exercise[] };
 
 function findAttempt(userId: Types.ObjectId, attemptId: string): Promise<LessonAttemptDocument> {
   if (!isValidObjectId(attemptId)) throw new ApiError(404, 'Attempt not found');
@@ -26,10 +29,13 @@ function findAttempt(userId: Types.ObjectId, attemptId: string): Promise<LessonA
   });
 }
 
-async function getExercise(attempt: LessonAttemptDocument, exerciseId: string) {
-  const lesson = await Lesson.findById(attempt.lessonId).lean();
-  if (!lesson) throw new ApiError(404, 'Lesson not found');
-  const stages = lesson.stages as unknown as Stage[];
+async function getExercise(
+  attempt: LessonAttemptDocument,
+  exerciseId: string,
+  user: Pick<UserDocument, 'nativeLanguage'>,
+) {
+  const lesson = await getBuiltLesson(attempt.lessonId.toString(), resolveLang(undefined, user));
+  const stages = lesson.stages as readonly Stage[];
   for (const stage of stages) {
     const exercise = stage.exercises.find((candidate) => candidate.id === exerciseId);
     if (exercise) return { lesson, stage, exercise };
@@ -119,7 +125,9 @@ export async function recordAttemptResult(
   input: AttemptResultInput,
 ) {
   const attempt = await findAttempt(userId, attemptId);
-  const { lesson, stage, exercise } = await getExercise(attempt, input.exerciseId);
+  const user = await User.findById(userId).select('nativeLanguage').lean();
+  if (!user) throw new ApiError(404, 'User not found');
+  const { stage, exercise } = await getExercise(attempt, input.exerciseId, user);
   validateAnswer(exercise, input.answer);
   const allowed = ['mcq', 'gap', 'listen_pick', 'order_words', 'match_pairs'].includes(
     exercise.type,
@@ -157,7 +165,7 @@ export async function recordAttemptResult(
     mistakeSaved = await createMistake({
       userId,
       attemptId: attempt._id,
-      lessonId: lesson._id,
+      lessonId: attempt.lessonId,
       original: text.original,
       correction: {
         corrected: text.corrected,

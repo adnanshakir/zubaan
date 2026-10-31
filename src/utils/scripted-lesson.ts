@@ -220,6 +220,7 @@ export interface ScriptTurn {
   sentenceId: string;
   alternatives?: readonly string[];
   repeat: string;
+  free?: boolean;
   knownMistakes?: readonly {
     wrong: string;
     explanation: string;
@@ -290,7 +291,14 @@ export function stepScript(
     throw new Error(`Scripted lesson turn references unknown sentence ${turn.sentenceId}`);
   }
   const candidates = [sentence.text, ...(turn.alternatives ?? [])];
-  const checks = candidates.map((candidate) => checkAgainstTarget(candidate, userText));
+  const freeExact: TurnCheck | null =
+    turn.free === true && tokenize(userText).length >= 3
+      ? { outcome: 'exact', corrected: '', explanation: '', mistakeType: 'other' as const }
+      : null;
+  const checks =
+    turn.free === true
+      ? [freeExact ?? OFF]
+      : candidates.map((candidate) => checkAgainstTarget(candidate, userText));
   const exactIndex = checks.findIndex((candidate) => candidate.outcome === 'exact');
   const bestIndex =
     exactIndex >= 0

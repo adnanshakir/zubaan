@@ -1,47 +1,62 @@
 # Lesson content authoring
 
-Lesson files live in `src/seed/lessons/` and export a `LessonContent` value.
-`validateLesson` runs before seeding and rejects inconsistent content.
+Lessons are authored in `src/seed/lessons/`, stored as a language-neutral
+`LessonDef` plus one `LessonTranslation` per language, and built when requested.
+The seed stores the definition in `Lesson` and translation data in
+`LessonTranslation`; learners receive only the selected language.
 
-## Sentences and chat
+## Folder layout
 
-`sentences` is the single source of truth for what the learner says. Every
-chat turn points to one sentence with `sentenceId`. `alternatives` contains
-other accepted answers and those answers count as exact.
+Each lesson has a folder containing `<lesson>.ts` for its `LessonDef` and one
+`<language>.ts` file for each translation. `src/seed/lessons/index.ts` adds
+each pair to `lessonSources`. `assertLessonsValid()` runs before any seed write.
 
-Each turn has an always-visible `hint`, a `repeat` line for the first nudge
-after an unrelated answer, and optional `knownMistakes`. Known mistakes take
-precedence over the automatic word-diff explanation. Their `wrong` value is
-normalized and matched as a whole-word phrase. Up to two matching explanations
-are shown.
+## Authoring fields
 
-Every unrelated answer receives the turn’s repeat line. The second nudge also
-reveals the sentence behind the client’s tap, and the third unrelated answer
-moves on with no extra text. An off-topic answer that matches another turn’s
-sentence follows the same nudge behavior.
+`PhraseDef` fields:
 
-## Stages and exercises
+- `id`: stable phrase identifier.
+- `text`: English sentence.
+- `chunks`: words/chunks whose joined text equals `text`.
+- `tip`: English pronunciation or usage tip.
+- `why`: optional grammar explanation (defaults to `tip`).
+- `mistakeType`: optional `grammar`, `tense`, `preposition`, or `word_choice`.
+- `gap`: optional `{ word, options }` gap exercise configuration.
+- `wrong`: optional incorrect sentence alternatives.
+- `distractors`: optional listen-and-pick alternatives.
+- `extraWords`: optional wrong word-order tiles.
+- `focus`: optional `{ sound?, grammar? }` metadata.
 
-Stages are `words` and `sentences`. Every exercise has an `id` and `type`:
+`TurnDef` fields are `id`, `ai`, `phraseId`, optional `alternatives`, English
+`hint`, `repeat`, optional `knownMistakes`, and optional `free`. A free turn
+accepts any answer with at least three Latin-script words.
 
-- `mcq`: `prompt`, optional `promptHi`, `options`, `correct`, `explanation`
-- `gap`: `sentence` (containing `___`), `hi`, `options`, `correct`,
-  `explanation`
-- `listen_pick`: `prompt`, `text`, `options`, `correct`, `explanation`
-- `match_pairs`: `prompt`, and 3–6 `{ en, hi }` pairs
-- `order_words`: `promptHi`, `answer`, optional `extraWords`, `explanation`
-- `speak`: `sentenceId`
+`ConceptDef` fields are `id`, `prompt`, `options`, `correct`, and
+`explanation`.
 
-The `mcq`, `gap`, and `order_words` exercise types may also set
-`mistakeType` to `grammar`, `tense`, `preposition`, or `word_choice`.
-Only exercises with this field are registered in the mistake bank when the
-learner submits a wrong answer with an answer value. For a gap exercise,
-`original` is the sentence with `___` replaced by the chosen answer and
-`corrected` replaces it with `correct`. For order words, they are
-`answer.join(' ')` and the exercise `answer`; for an MCQ, they are the chosen
-option and `correct`. The exercise explanation is stored with the result.
+`LessonTranslation` contains `lang`, optional `canDo`, `phrases` keyed by
+phrase id (`meaning`, optional `tip` and `why`), `vocab` keyed by vocab id,
+optional `concepts` keyed by concept id (`prompt` and `explanation`), `turns`
+keyed by turn id (`hint`), and `ui.spotPrompt`.
 
-Exercise answers are stored as mixed values in MongoDB, but the
-`Exercise` union and `validateLesson` provide authoring-time type checking and
-validation. `validateLesson` also checks sentence chunks, IDs, options,
-sentence references, and that every sentence is spoken and asked in chat.
+## Generated content
+
+The builder creates `sentences` from phrases, a `words` stage, and a
+`sentences` stage. It creates a match-pairs exercise when there are at least
+three vocabulary items, one MCQ per concept, up to two listen-pick exercises
+from phrases with distractors, one gap/MCQ/order-words exercise when the phrase
+has the corresponding configuration (or is at least four words), and one
+speak exercise per phrase. Exercise ids are stable: `w-match`, `w-c-<concept>`,
+`w-l-<phrase>`, `g-<phrase>`, and `say-<phrase>`.
+
+Chat turns expose `free` only when authored. A free turn with fewer than three
+Latin-script words follows the normal off-answer retry behavior; a qualifying
+answer is exact with no correction.
+
+## Adding content
+
+To add a lesson, create its definition and `hi` translation files, then add
+them to `lessonSources`. Keep ids stable because attempts and mistakes refer to
+them. To add a language, create a new hi-style translation file, add it to the
+lesson's `lessonSources` entry, and add the language to `SUPPORTED_LANGS` in
+`src/services/lessonBuilder.ts`.

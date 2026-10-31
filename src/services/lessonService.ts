@@ -1,5 +1,4 @@
 import { isValidObjectId } from 'mongoose';
-import { Lesson } from '../models/Lesson.js';
 import type { UserDocument } from '../models/User.js';
 import {
   goalCategoryMap,
@@ -9,6 +8,8 @@ import {
   type Level,
 } from '../types/content.js';
 import { ApiError } from '../utils/ApiError.js';
+import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
+import { Lesson } from '../models/Lesson.js';
 
 export type LessonListItem = {
   id: string;
@@ -20,26 +21,33 @@ export type LessonListItem = {
   estimatedMinutes: number;
   sentenceCount: number;
   exerciseCount: number;
+  unit: string;
+  order: number;
+  canDo: string;
 };
 
 type LessonFilters = {
   category?: LessonCategory;
   level?: Level;
+  lang?: string;
 };
 
-export function toLessonListItem(lesson: {
-  _id: { toString(): string };
+function toLessonListItem(lesson: {
+  id: string;
   slug: string;
   title: string;
   category: string;
   level: string;
   objective: string;
   estimatedMinutes: number;
+  unit?: string;
+  order?: number;
+  canDo?: string;
   sentences?: readonly unknown[];
   stages?: readonly { exercises?: readonly unknown[] }[];
 }): LessonListItem {
   return {
-    id: lesson._id.toString(),
+    id: lesson.id,
     slug: lesson.slug,
     title: lesson.title,
     category: lesson.category as LessonCategory,
@@ -49,68 +57,69 @@ export function toLessonListItem(lesson: {
     sentenceCount: lesson.sentences?.length ?? 0,
     exerciseCount:
       lesson.stages?.reduce((count, stage) => count + (stage.exercises?.length ?? 0), 0) ?? 0,
+    unit: lesson.unit ?? '',
+    order: lesson.order ?? 0,
+    canDo: lesson.canDo ?? lesson.objective,
   };
 }
 
-export async function listLessons(filters: LessonFilters): Promise<LessonListItem[]> {
-  const lessons = await Lesson.find(filters)
-    .select('slug title category level objective estimatedMinutes sentences stages')
-    .lean();
+function sortLessons(a: LessonListItem, b: LessonListItem): number {
+  return levels.indexOf(a.level) - levels.indexOf(b.level) || a.order - b.order;
+}
 
-  return lessons.map(toLessonListItem);
+export async function listLessons(
+  filters: LessonFilters,
+  user: Pick<UserDocument, 'nativeLanguage'>,
+): Promise<LessonListItem[]> {
+  const { lang: requestedLang, ...query } = filters;
+  const lang = resolveLang(requestedLang, user);
+  const lessons = await Lesson.find(query).select('_id').lean();
+  const built = await Promise.all(
+    lessons.map((lesson) => getBuiltLesson(lesson._id.toString(), lang)),
+  );
+  return built.map((lesson) => toLessonListItem(lesson)).sort(sortLessons);
 }
 
 export async function getRecommended(
-  user: Pick<UserDocument, 'goal' | 'level'>,
+  user: Pick<UserDocument, 'goal' | 'level' | 'nativeLanguage'>,
 ): Promise<LessonListItem | null> {
+  const lang = resolveLang(undefined, user);
   const category = goalCategoryMap[user.goal as Goal];
   const userLevel = user.level as Level;
-  const exactMatch = await Lesson.findOne({ category, level: userLevel })
-    .select('slug title category level objective estimatedMinutes sentences stages')
-    .lean();
+  const exactMatch = await Lesson.findOne({ category, level: userLevel }).select('_id').lean();
 
   if (exactMatch) {
-    return toLessonListItem(exactMatch);
+    return toLessonListItem(await getBuiltLesson(exactMatch._id.toString(), lang));
   }
 
-  const categoryLessons = await Lesson.find({ category })
-    .select('slug title category level objective estimatedMinutes sentences stages')
-    .lean();
-
+  const categoryLessons = await Lesson.find({ category }).select('_id level').lean();
   if (categoryLessons.length > 0) {
     const targetLevelIndex = levels.indexOf(userLevel);
     const nearestLesson = categoryLessons.reduce((closest, lesson) => {
       const closestDistance = Math.abs(levels.indexOf(closest.level as Level) - targetLevelIndex);
       const lessonDistance = Math.abs(levels.indexOf(lesson.level as Level) - targetLevelIndex);
-
       return lessonDistance < closestDistance ? lesson : closest;
     });
-
-    return toLessonListItem(nearestLesson);
+    return toLessonListItem(await getBuiltLesson(nearestLesson._id.toString(), lang));
   }
 
-  const fallbackLesson = await Lesson.findOne()
-    .select('slug title category level objective estimatedMinutes sentences stages')
-    .lean();
-
-  return fallbackLesson ? toLessonListItem(fallbackLesson) : null;
+  const fallbackLesson = await Lesson.findOne().select('_id').lean();
+  return fallbackLesson
+    ? toLessonListItem(await getBuiltLesson(fallbackLesson._id.toString(), lang))
+    : null;
 }
 
-export async function getLessonById(id: string) {
-  if (!isValidObjectId(id)) {
-    throw new ApiError(404, 'Lesson not found');
-  }
-
-  const lesson = await Lesson.findById(id)
-    .select('slug title category level objective estimatedMinutes sentences stages chat')
-    .lean();
-
-  if (!lesson) {
-    throw new ApiError(404, 'Lesson not found');
-  }
-
+export async function getLessonById(
+  id: string,
+  user: Pick<UserDocument, 'nativeLanguage'>,
+  requestedLang?: string,
+) {
+  if (!isValidObjectId(id)) throw new ApiError(404, 'Lesson not found');
+  const lang = resolveLang(requestedLang, user);
+  const lesson = await getBuiltLesson(id, lang);
   return {
     ...toLessonListItem(lesson),
+    lang: lesson.lang,
     sentences: lesson.sentences,
     stages: lesson.stages,
     chat: {
