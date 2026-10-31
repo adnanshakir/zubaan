@@ -2,6 +2,7 @@ export interface Sentence {
   id: string; // 's1', 's2', ...
   text: string;
   hi: string; // Hindi meaning
+  meaning: string; // Hindi meaning
   tip: string; // how to say it / grammar note
   chunks: readonly string[]; // chunks.join(' ') must equal text
 }
@@ -89,9 +90,10 @@ export interface ChatTurn {
   ai: string; // what the AI says before the learner answers
   sentenceId: string; // the sentence the learner should say
   alternatives?: readonly string[]; // other accepted answers (count as exact)
-  hint: { en: string; hi: string }; // always visible; the sentence is behind a tap
+  hint: { en: string; hi: string; native: string }; // always visible; the sentence is behind a tap
   repeat: string; // AI re-asks in character after an unrelated answer
   knownMistakes?: readonly KnownMistake[]; // beat the automatic explanation
+  free?: boolean; // "say it your own way"
 }
 
 export interface Chat {
@@ -110,6 +112,10 @@ export interface LessonContent {
   level: Level;
   objective: string;
   estimatedMinutes: number;
+  unit?: string;
+  order?: number;
+  canDo?: string;
+  focus?: string;
   sentences: readonly Sentence[];
   stages: readonly Stage[];
   chat: Chat;
