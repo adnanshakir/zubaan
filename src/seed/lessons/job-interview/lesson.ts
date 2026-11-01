@@ -142,6 +142,7 @@ export const jobInterviewLesson: LessonDef = {
         alternatives: ['I have experience working with different teams.'],
         hint: 'Say that you have experience working with different teams.',
         repeat: 'Sorry, could you tell me a little about yourself?',
+        free: true,
         knownMistakes: [
           {
             wrong: 'experience work with',

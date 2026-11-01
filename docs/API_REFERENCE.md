@@ -583,7 +583,8 @@ curl -X POST http://localhost:5000/api/conversations \
 
 `correction` is `null` when the learner's message has no mistake. When
 present it contains the corrected sentence, a short explanation, and a
-mistake type. See `Correction` in §4.
+mistake type. For scripted turns, `hasMistake` and `corrected` can be present
+even when the answer did not advance the turn. See `Correction` in §4.
 `feedback` is `null` unless this turn completed the conversation.
 `revealHint` (`boolean`) — scripted-lesson turns only. `true` when the
 learner's second consecutive off-target attempt triggers the repeat prompt,

@@ -245,7 +245,7 @@ export async function takeConversationTurn(
     updatedConversation.script = step.state;
 
     const correction =
-      step.check.outcome === 'close'
+      step.outcome !== 'moved_on' && step.check.corrected
         ? {
             corrected: step.check.corrected,
             explanation: step.check.explanation,
@@ -298,10 +298,10 @@ export async function takeConversationTurn(
         current: Math.min(step.state.turnIndex + 1, chat.turns.length),
         total: chat.turns.length,
       },
-      hasMistake: step.check.outcome === 'close',
-      corrected: step.check.corrected,
-      explanation: step.check.explanation,
-      mistakeType: step.check.mistakeType,
+      hasMistake: correction !== null,
+      corrected: correction?.corrected ?? '',
+      explanation: correction?.explanation ?? '',
+      mistakeType: correction?.type ?? 'other',
       correction,
       revealHint: step.revealHint,
       feedback,

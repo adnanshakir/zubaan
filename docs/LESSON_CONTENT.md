@@ -50,8 +50,10 @@ speak exercise per phrase. Exercise ids are stable: `w-match`, `w-c-<concept>`,
 `w-l-<phrase>`, `g-<phrase>`, and `say-<phrase>`.
 
 Chat turns expose `free` only when authored. A free turn with fewer than three
-Latin-script words follows the normal off-answer retry behavior; a qualifying
-answer is exact with no correction.
+Latin-script words follows the normal off-answer retry behavior. A qualifying
+answer that is not an exact target match advances normally: it is exact when
+the grammar pass finds no fixes, or close with the grammar correction when it
+does.
 
 ## Adding content
 
