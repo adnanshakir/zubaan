@@ -42,6 +42,15 @@ export const cafeHi: LessonTranslation = {
     c2: { prompt: 'वेटर पूछता है "Eat in or takeaway?" वह क्या जानना चाहता है?' },
     c3: { prompt: '"Could I get the bill, please?" का क्या मतलब है?' },
   },
+  drills: {
+    'd-comes-to': {
+      promptHi: 'वेटर कहता है: "That comes to two hundred rupees." इसका क्या मतलब है?',
+    },
+    'd-type-would-like': { hi: 'मुझे एक कॉफ़ी मिल जाए तो अच्छा होगा, कृपया।' },
+    'd-type-some': { hi: 'क्या मुझे थोड़ी चीनी मिल सकती है, कृपया?' },
+    'd-fix-how-much': { promptHi: 'सही सवाल चुनें।' },
+    'd-reply-order': { hint: 'विनम्रता से कोई पेय ऑर्डर करें।' },
+  },
   turns: {
     t1: { hint: 'विनम्रता से एक चाय माँगें।' },
     t2: { hint: 'बताएँ कि आप एक चीज़ सैंडविच लेना चाहते हैं।' },

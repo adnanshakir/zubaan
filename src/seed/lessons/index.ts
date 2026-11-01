@@ -12,6 +12,16 @@ import { cafeLesson } from './cafe/lesson.js';
 import { directionsLesson } from './directions/lesson.js';
 import { directionsHi } from './directions/hi.js';
 import { cafeHi } from './cafe/hi.js';
+import { appointmentLesson } from './appointment/lesson.js';
+import { meetingLesson } from './meeting/lesson.js';
+import { meetingHi } from './meeting/hi.js';
+import { appointmentHi } from './appointment/hi.js';
+import { problemReportLesson } from './problem-report/lesson.js';
+import { storyLesson } from './story/lesson.js';
+import { negotiationLesson } from './negotiation/lesson.js';
+import { negotiationHi } from './negotiation/hi.js';
+import { storyHi } from './story/hi.js';
+import { problemReportHi } from './problem-report/hi.js';
 
 export const lessonSources: { def: LessonDef; translations: Record<string, LessonTranslation> }[] =
   [
@@ -20,6 +30,11 @@ export const lessonSources: { def: LessonDef; translations: Record<string, Lesso
     { def: jobInterviewLesson, translations: { hi: jobInterviewHi } },
     { def: cafeLesson, translations: { hi: cafeHi } },
     { def: directionsLesson, translations: { hi: directionsHi } },
+    { def: appointmentLesson, translations: { hi: appointmentHi } },
+    { def: meetingLesson, translations: { hi: meetingHi } },
+    { def: problemReportLesson, translations: { hi: problemReportHi } },
+    { def: storyLesson, translations: { hi: storyHi } },
+    { def: negotiationLesson, translations: { hi: negotiationHi } },
   ];
 
 export const lessons: readonly LessonContent[] = lessonSources.map(({ def, translations }) =>

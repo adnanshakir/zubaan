@@ -30,6 +30,16 @@ export const neighbourHi: LessonTranslation = {
     c2: { prompt: '"I just moved in" का क्या मतलब है?' },
     c3: { prompt: 'कौन सा शब्द "शांत" है?' },
   },
+  drills: {
+    'd-best-reply': {
+      promptHi:
+        'प्रिया कहती है: "Welcome! I am Priya from apartment 4B." सबसे अच्छा जवाब कौन सा है?',
+    },
+    'd-type-used-to': { hi: 'पहले मेरा घर दिल्ली में था, पर अब मेरा घर यहाँ है।' },
+    'd-fix-because': { promptHi: 'सही वाक्य चुनें।' },
+    'd-type-where': { hi: 'क्या आप बता सकते हैं कि डाकघर कहाँ है?' },
+    'd-reply-before': { hint: 'बताइए कि पहले आप कहाँ रहते थे।' },
+  },
   turns: {
     t1: { hint: 'नमस्ते कहें और बताएँ कि आप उनके नए पड़ोसी हैं।' },
     t2: { hint: 'विनम्रता से कहें कि आपसे मिलकर अच्छा लगा।' },

@@ -45,6 +45,19 @@ export const directionsHi: LessonTranslation = {
     c3: { prompt: 'वह कहता है: "It is about ten minutes on foot." आप कैसे जाएँगे?' },
     c4: { prompt: 'कौन सा सवाल दूरी के बारे में है?' },
   },
+  drills: {
+    'd-cannot-miss': {
+      promptHi: 'वह कहता है: "You cannot miss it." इसका क्या मतलब है?',
+    },
+    'd-type-where-is': { hi: 'सुनिए, डाकघर कहाँ है?' },
+    'd-type-how-long': { hi: 'वहाँ पैदल जाने में कितना समय लगता है?' },
+    'd-slow-please': {
+      promptHi: 'आप दिशाएँ नहीं समझ पाए। कौन सा वाक्य धीरे बोलने के लिए कहता है?',
+    },
+    'd-reply-check': {
+      hint: 'जो समझे हैं, उसे दोहराकर पक्का करें: आपको ट्रैफ़िक सिग्नल पर बाएँ मुड़ना है।',
+    },
+  },
   turns: {
     t1: { hint: 'विनम्रता से पूछें कि बस स्टॉप कहाँ है।' },
     t2: { hint: 'पूछें कि क्या वह यहाँ से दूर है।' },
