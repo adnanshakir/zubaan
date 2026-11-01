@@ -27,6 +27,48 @@ export interface ConceptDef {
   explanation: string;
 }
 
+export type DrillDef =
+  | {
+      id: string;
+      type: 'mcq';
+      stage: 'words' | 'sentences';
+      after?: string;
+      prompt: string;
+      options: readonly string[];
+      correct: string;
+      explanation: string;
+      mistakeType?: MistakeKind;
+    }
+  | {
+      id: string;
+      type: 'type_gap';
+      stage: 'words' | 'sentences';
+      after?: string;
+      sentence: string;
+      accept: readonly string[];
+      explanation: string;
+      mistakeType?: MistakeKind;
+    }
+  | {
+      id: string;
+      type: 'dictation';
+      stage: 'words' | 'sentences';
+      after?: string;
+      text: string;
+      explanation: string;
+      mistakeType?: MistakeKind;
+    }
+  | {
+      id: string;
+      type: 'reply_speak';
+      stage: 'words' | 'sentences';
+      after?: string;
+      ai: string;
+      hint: string;
+      accept: readonly string[];
+      explanation: string;
+    };
+
 export interface TurnDef {
   id: string; // 't1'
   ai: string;
@@ -51,6 +93,7 @@ export interface LessonDef {
   phrases: readonly PhraseDef[];
   vocab: readonly VocabDef[];
   concepts: readonly ConceptDef[];
+  drills?: readonly DrillDef[];
   dialogue: {
     aiRole: string;
     userRole: string;
@@ -67,6 +110,10 @@ export interface LessonTranslation {
   phrases: Record<string, { meaning: string; tip?: string; why?: string }>;
   vocab: Record<string, string>;
   concepts?: Record<string, { prompt?: string; explanation?: string }>;
+  drills?: Record<
+    string,
+    { prompt?: string; promptHi?: string; hi?: string; hint?: string; explanation?: string }
+  >;
   turns: Record<string, { hint: string }>;
   ui: { spotPrompt: string };
 }

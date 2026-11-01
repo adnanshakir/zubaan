@@ -34,10 +34,28 @@ accepts any answer with at least three Latin-script words.
 `ConceptDef` fields are `id`, `prompt`, `options`, `correct`, and
 `explanation`.
 
+`DrillDef` fields are `id`, `stage` (`words` or `sentences`), optional `after`
+(a phrase id), and one of:
+
+- `mcq`: `prompt`, `options`, `correct`, `explanation`, optional `mistakeType`.
+- `type_gap`: `sentence` containing `___`, non-empty `accept`, and
+  `explanation`, with optional `mistakeType`.
+- `dictation`: `text` of at least four words and `explanation`, with optional
+  `mistakeType`.
+- `reply_speak`: `ai`, English `hint`, non-empty `accept` replies of at least
+  two words, and `explanation`.
+
+Drills in the `words` stage are appended after the existing word exercises. In
+the `sentences` stage, drills with `after` are placed immediately after that
+phrase's `say-` exercise; drills without `after` are appended at the end.
+Drills sharing an `after` phrase retain authored order.
+
 `LessonTranslation` contains `lang`, optional `canDo`, `phrases` keyed by
 phrase id (`meaning`, optional `tip` and `why`), `vocab` keyed by vocab id,
 optional `concepts` keyed by concept id (`prompt` and `explanation`), `turns`
-keyed by turn id (`hint`), and `ui.spotPrompt`.
+keyed by turn id (`hint`), optional `drills` keyed by drill id
+(`promptHi`, `hi`, `hint`, and `explanation`), and `ui.spotPrompt`. `hi` is
+required for `type_gap` drills and `hint` is required for `reply_speak` drills.
 
 ## Generated content
 

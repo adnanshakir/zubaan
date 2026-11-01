@@ -16,6 +16,8 @@ type Exercise = {
   sentence?: string;
   correct?: string;
   answer?: string;
+  accept?: readonly string[];
+  text?: string;
   explanation?: string;
 };
 
@@ -45,16 +47,20 @@ async function getExercise(
 
 function validateAnswer(exercise: Exercise, answer: string | string[] | undefined): void {
   if (answer === undefined) return;
-  if (['mcq', 'gap', 'listen_pick'].includes(exercise.type) && typeof answer !== 'string') {
+  if (
+    ['mcq', 'gap', 'listen_pick', 'type_gap', 'dictation', 'reply_speak'].includes(exercise.type) &&
+    typeof answer !== 'string'
+  ) {
     throw new ApiError(400, 'answer must be a string');
   }
   if (typeof answer === 'string') {
     const storedText =
-      exercise.type === 'gap' && exercise.sentence
+      ['gap', 'type_gap'].includes(exercise.type) && exercise.sentence
         ? exercise.sentence.replace('___', answer)
         : answer;
-    if (storedText.length > 500) {
-      throw new ApiError(400, 'answer must produce text of at most 500 characters');
+    const maxLength = ['type_gap', 'dictation'].includes(exercise.type) ? 200 : 500;
+    if (storedText.length > maxLength) {
+      throw new ApiError(400, `answer must produce text of at most ${maxLength} characters`);
     }
   }
   if (exercise.type === 'order_words') {
@@ -73,11 +79,17 @@ function mistakeText(
   exercise: Exercise,
   answer: string | string[],
 ): { original: string; corrected: string } {
-  if (exercise.type === 'gap') {
+  if (exercise.type === 'gap' || exercise.type === 'type_gap') {
     return {
       original: exercise.sentence!.replace('___', String(answer)),
-      corrected: exercise.sentence!.replace('___', exercise.correct!),
+      corrected: exercise.sentence!.replace(
+        '___',
+        exercise.type === 'type_gap' ? exercise.accept![0] : exercise.correct!,
+      ),
     };
+  }
+  if (exercise.type === 'dictation') {
+    return { original: String(answer), corrected: exercise.text! };
   }
   if (exercise.type === 'order_words') {
     return { original: (answer as string[]).join(' '), corrected: exercise.answer! };
@@ -129,11 +141,17 @@ export async function recordAttemptResult(
   if (!user) throw new ApiError(404, 'User not found');
   const { stage, exercise } = await getExercise(attempt, input.exerciseId, user);
   validateAnswer(exercise, input.answer);
-  const allowed = ['mcq', 'gap', 'listen_pick', 'order_words', 'match_pairs'].includes(
-    exercise.type,
-  )
+  const allowed = [
+    'mcq',
+    'gap',
+    'listen_pick',
+    'order_words',
+    'match_pairs',
+    'type_gap',
+    'dictation',
+  ].includes(exercise.type)
     ? ['correct', 'wrong']
-    : exercise.type === 'speak'
+    : exercise.type === 'reply_speak' || exercise.type === 'speak'
       ? ['said', 'close', 'missed', 'skipped']
       : [];
   if (!allowed.includes(input.result)) throw new ApiError(400, 'Invalid result for exercise type');

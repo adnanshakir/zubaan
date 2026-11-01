@@ -57,8 +57,27 @@ export function validateLesson(lesson: LessonContent): string[] {
           spoken.add(exercise.sentenceId);
           break;
         }
+        case 'type_gap': {
+          if (!exercise.sentence.includes('___')) fail(`${exercise.id}: gap sentence has no ___`);
+          if (exercise.accept.length === 0) fail(`${exercise.id}: needs an accepted answer`);
+          break;
+        }
+        case 'dictation': {
+          if (exercise.text.trim().split(/\s+/).length < 4) {
+            fail(`${exercise.id}: dictation text is too short`);
+          }
+          break;
+        }
+        case 'reply_speak': {
+          if (!exercise.ai.trim()) fail(`${exercise.id}: ai is required`);
+          if (exercise.accept.length === 0) fail(`${exercise.id}: needs an accepted reply`);
+          if (exercise.accept.some((answer) => answer.trim().split(/\s+/).length < 2)) {
+            fail(`${exercise.id}: accepted replies need at least 2 words`);
+          }
+          break;
+        }
       }
-      if (exercise.type !== 'mcq' && exercise.type !== 'gap' && exercise.type !== 'order_words') {
+      if (!['mcq', 'gap', 'order_words', 'type_gap', 'dictation'].includes(exercise.type)) {
         if ('mistakeType' in exercise) {
           fail(`${exercise.id}: mistakeType is not allowed on ${exercise.type}`);
         }
@@ -103,6 +122,57 @@ export function validateAuthoring(def: LessonDef, tr: LessonTranslation): string
     def.phrases.map((phrase) => phrase.id),
     'phrase',
   );
+  const drills = def.drills ?? [];
+  unique(
+    drills.map((drill) => drill.id),
+    'drill',
+  );
+  const generatedIds = new Set([
+    ...(def.vocab.length >= 3 ? ['w-match'] : []),
+    ...def.concepts.map((concept) => `w-c-${concept.id}`),
+    ...def.phrases
+      .filter((phrase) => phrase.distractors)
+      .slice(0, 2)
+      .map((phrase) => `w-l-${phrase.id}`),
+    ...def.phrases.map((phrase) => `say-${phrase.id}`),
+    ...def.phrases
+      .filter((phrase) => phrase.gap || phrase.wrong || phrase.text.trim().split(/\s+/).length >= 4)
+      .map((phrase) => `g-${phrase.id}`),
+  ]);
+  for (const drill of drills) {
+    if (drill.id.trim().length === 0) fail('drill id must be non-empty');
+    if (drill.stage !== 'words' && drill.stage !== 'sentences') {
+      fail(`${drill.id}: invalid stage`);
+    }
+    if (generatedIds.has(drill.id)) fail(`drill ${drill.id} collides with a generated exercise id`);
+    if (drill.after && !def.phrases.some((phrase) => phrase.id === drill.after)) {
+      fail(`${drill.id}: unknown after phrase ${drill.after}`);
+    }
+    if (drill.type === 'mcq' && !drill.options.includes(drill.correct)) {
+      fail(`${drill.id}: correct answer is not in options`);
+    }
+    if (drill.type === 'type_gap') {
+      if (!drill.sentence.includes('___')) fail(`${drill.id}: sentence has no ___`);
+      if (drill.accept.length === 0) fail(`${drill.id}: needs an accepted answer`);
+    }
+    if (drill.type === 'dictation' && drill.text.trim().split(/\s+/).length < 4) {
+      fail(`${drill.id}: dictation text is too short`);
+    }
+    if (drill.type === 'reply_speak') {
+      if (!drill.ai.trim()) fail(`${drill.id}: ai is required`);
+      if (drill.accept.length === 0) fail(`${drill.id}: needs an accepted reply`);
+      if (drill.accept.some((answer) => answer.trim().split(/\s+/).length < 2)) {
+        fail(`${drill.id}: accepted replies need at least 2 words`);
+      }
+    }
+    const translation = tr.drills?.[drill.id];
+    if (drill.type === 'type_gap' && !translation?.hi) {
+      fail(`missing translation drills.${drill.id}.hi`);
+    }
+    if (drill.type === 'reply_speak' && !translation?.hint) {
+      fail(`missing translation drills.${drill.id}.hint`);
+    }
+  }
   unique(
     def.vocab.map((vocab) => vocab.id),
     'vocab',

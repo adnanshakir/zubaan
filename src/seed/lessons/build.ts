@@ -1,4 +1,4 @@
-import type { LessonDef, LessonTranslation } from './authoring.js';
+import type { DrillDef, LessonDef, LessonTranslation } from './authoring.js';
 import type { Exercise, LessonContent, Stage, Sentence } from './types.js';
 
 function missing(slug: string, key: string): never {
@@ -20,6 +20,53 @@ export function buildLesson(def: LessonDef, tr: LessonTranslation): LessonConten
     const translation = tr.turns[id];
     if (!translation) missing(def.slug, `turns.${id}`);
     return translation;
+  };
+  const drillTranslation = (id: string) => tr.drills?.[id];
+
+  const buildDrill = (drill: DrillDef): Exercise => {
+    const translation = drillTranslation(drill.id);
+    switch (drill.type) {
+      case 'mcq':
+        return {
+          id: drill.id,
+          type: 'mcq',
+          prompt: drill.prompt,
+          promptHi: translation?.promptHi,
+          options: drill.options,
+          correct: drill.correct,
+          explanation: translation?.explanation ?? drill.explanation,
+          mistakeType: drill.mistakeType,
+        };
+      case 'type_gap':
+        if (!translation?.hi) missing(def.slug, `drills.${drill.id}.hi`);
+        return {
+          id: drill.id,
+          type: 'type_gap',
+          sentence: drill.sentence,
+          hi: translation.hi,
+          accept: drill.accept,
+          explanation: translation.explanation ?? drill.explanation,
+          mistakeType: drill.mistakeType,
+        };
+      case 'dictation':
+        return {
+          id: drill.id,
+          type: 'dictation',
+          text: drill.text,
+          explanation: translation?.explanation ?? drill.explanation,
+          mistakeType: drill.mistakeType,
+        };
+      case 'reply_speak':
+        if (!translation?.hint) missing(def.slug, `drills.${drill.id}.hint`);
+        return {
+          id: drill.id,
+          type: 'reply_speak',
+          ai: drill.ai,
+          hint: { en: drill.hint, hi: translation.hint, native: translation.hint },
+          accept: drill.accept,
+          explanation: translation.explanation ?? drill.explanation,
+        };
+    }
   };
 
   const sentences: Sentence[] = def.phrases.map((phrase) => {
@@ -108,6 +155,21 @@ export function buildLesson(def: LessonDef, tr: LessonTranslation): LessonConten
       });
     }
     sentenceExercises.push({ id: `say-${phrase.id}`, type: 'speak', sentenceId: phrase.id });
+    for (const drill of def.drills ?? []) {
+      if (drill.stage === 'sentences' && drill.after === phrase.id) {
+        sentenceExercises.push(buildDrill(drill));
+      }
+    }
+  }
+  for (const drill of def.drills ?? []) {
+    if (drill.stage === 'sentences' && !drill.after) {
+      sentenceExercises.push(buildDrill(drill));
+    }
+  }
+  for (const drill of def.drills ?? []) {
+    if (drill.stage === 'words') {
+      wordExercises.push(buildDrill(drill));
+    }
   }
 
   const stages: readonly Stage[] = [

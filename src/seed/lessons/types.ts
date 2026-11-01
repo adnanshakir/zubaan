@@ -62,13 +62,43 @@ export interface SpeakExercise {
   sentenceId: string; // says the sentence out loud with colored feedback
 }
 
+export interface TypeGapExercise {
+  id: string;
+  type: 'type_gap';
+  sentence: string;
+  hi: string;
+  accept: readonly string[];
+  explanation: string;
+  mistakeType?: MistakeKind;
+}
+
+export interface DictationExercise {
+  id: string;
+  type: 'dictation';
+  text: string;
+  explanation: string;
+  mistakeType?: MistakeKind;
+}
+
+export interface ReplySpeakExercise {
+  id: string;
+  type: 'reply_speak';
+  ai: string;
+  hint: { en: string; hi: string; native: string };
+  accept: readonly string[];
+  explanation: string;
+}
+
 export type Exercise =
   | McqExercise
   | GapExercise
   | ListenPickExercise
   | MatchPairsExercise
   | OrderWordsExercise
-  | SpeakExercise;
+  | SpeakExercise
+  | TypeGapExercise
+  | DictationExercise
+  | ReplySpeakExercise;
 
 export interface Stage {
   id: 'words' | 'sentences';

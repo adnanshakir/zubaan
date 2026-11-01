@@ -57,6 +57,7 @@ export async function getBuiltLesson(
     phrases: lesson.phrases as LessonDef['phrases'],
     vocab: lesson.vocab as LessonDef['vocab'],
     concepts: lesson.concepts as LessonDef['concepts'],
+    drills: lesson.drills as LessonDef['drills'],
     dialogue: lesson.dialogue as LessonDef['dialogue'],
   };
   const built = {

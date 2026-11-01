@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-11-01
+> **Last verified against code**: 2026-11-02
 
 ---
 
@@ -789,11 +789,13 @@ Request body:
 ```
 
 `result` is `correct | wrong` for `mcq`, `gap`, `listen_pick`, `order_words`,
-and `match_pairs`; it is `said | close | missed | skipped` for `speak`.
-`answer` is a string for MCQ/gap/listen-pick and an array of at most 30
-strings, each at most 40 characters, for order-words. The answer text, or
-the joined order-words answer, must be at most 500 characters. The server
-resolves `stageId` and exercise type from the stored lesson. A second
+`match_pairs`, `type_gap`, and `dictation`; it is `said | close | missed |
+skipped` for `speak` and `reply_speak`. `answer` is a string for MCQ,
+gap/listen-pick/type-gap/dictation/reply-speak and an array of at most 30
+strings, each at most 40 characters, for order-words. Type-gap and dictation
+answers must be at most 200 characters; other answer text, or the joined
+order-words answer, must be at most 500 characters. The server resolves
+`stageId` and exercise type from the stored lesson. A second
 non-retry submission returns `{ "recorded": false, "mistakeSaved": false }`.
 Retries only accept `correct` or `wrong`, update `retryResult`, and never
 create a mistake.
@@ -1136,8 +1138,9 @@ curl "http://localhost:5000/api/mistakes/summary" \
 **Stage**:
 
 `{ id: "words" | "sentences"; title: string; intro: string; exercises: Exercise[] }`.
-Exercises are `mcq`, `gap`, `listen_pick`, `match_pairs`, `order_words`, or
-`speak`; see `docs/LESSON_CONTENT.md` for every field. Exercises include
+Exercises are `mcq`, `gap`, `listen_pick`, `match_pairs`, `order_words`,
+`speak`, `type_gap`, `dictation`, or `reply_speak`; see
+`docs/LESSON_CONTENT.md` for every field. Exercises include
 `correct` in lesson detail responses.
 
 **Chat**:
@@ -1443,7 +1446,8 @@ interface Stage {
 }
 
 type Exercise = McqExercise | GapExercise | ListenPickExercise |
-  MatchPairsExercise | OrderWordsExercise | SpeakExercise;
+  MatchPairsExercise | OrderWordsExercise | SpeakExercise | TypeGapExercise |
+  DictationExercise | ReplySpeakExercise;
 
 interface McqExercise {
   id: string; type: "mcq"; prompt: string; promptHi?: string;
@@ -1467,6 +1471,19 @@ interface OrderWordsExercise {
 }
 interface SpeakExercise {
   id: string; type: "speak"; sentenceId: string;
+}
+interface TypeGapExercise {
+  id: string; type: "type_gap"; sentence: string; hi: string;
+  accept: string[]; explanation: string; mistakeType?: MistakeKind;
+}
+interface DictationExercise {
+  id: string; type: "dictation"; text: string; explanation: string;
+  mistakeType?: MistakeKind;
+}
+interface ReplySpeakExercise {
+  id: string; type: "reply_speak"; ai: string;
+  hint: { en: string; hi: string; native: string };
+  accept: string[]; explanation: string;
 }
 
 interface Chat {

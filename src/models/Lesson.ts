@@ -15,6 +15,7 @@ const lessonSchema = new Schema(
     phrases: { type: [Schema.Types.Mixed], required: true },
     vocab: { type: [Schema.Types.Mixed], required: true },
     concepts: { type: [Schema.Types.Mixed], required: true },
+    drills: { type: [Schema.Types.Mixed] },
     dialogue: { type: Schema.Types.Mixed, required: true },
     version: { type: String, required: true },
   },
