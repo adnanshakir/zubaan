@@ -8,12 +8,18 @@ import { neighbourHi } from './neighbour/hi.js';
 import type { LessonContent } from './types.js';
 import type { LessonDef, LessonTranslation } from './authoring.js';
 import { validateAuthoring, validateLesson } from './validate.js';
+import { cafeLesson } from './cafe/lesson.js';
+import { directionsLesson } from './directions/lesson.js';
+import { directionsHi } from './directions/hi.js';
+import { cafeHi } from './cafe/hi.js';
 
 export const lessonSources: { def: LessonDef; translations: Record<string, LessonTranslation> }[] =
   [
     { def: neighbourLesson, translations: { hi: neighbourHi } },
     { def: managerUpdateLesson, translations: { hi: managerUpdateHi } },
     { def: jobInterviewLesson, translations: { hi: jobInterviewHi } },
+    { def: cafeLesson, translations: { hi: cafeHi } },
+    { def: directionsLesson, translations: { hi: directionsHi } },
   ];
 
 export const lessons: readonly LessonContent[] = lessonSources.map(({ def, translations }) =>
