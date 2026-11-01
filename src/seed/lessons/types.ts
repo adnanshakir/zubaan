@@ -2,6 +2,7 @@ export interface Sentence {
   id: string; // 's1', 's2', ...
   text: string;
   hi: string; // Hindi meaning
+  meaning: string; // Hindi meaning
   tip: string; // how to say it / grammar note
   chunks: readonly string[]; // chunks.join(' ') must equal text
 }
@@ -61,13 +62,43 @@ export interface SpeakExercise {
   sentenceId: string; // says the sentence out loud with colored feedback
 }
 
+export interface TypeGapExercise {
+  id: string;
+  type: 'type_gap';
+  sentence: string;
+  hi: string;
+  accept: readonly string[];
+  explanation: string;
+  mistakeType?: MistakeKind;
+}
+
+export interface DictationExercise {
+  id: string;
+  type: 'dictation';
+  text: string;
+  explanation: string;
+  mistakeType?: MistakeKind;
+}
+
+export interface ReplySpeakExercise {
+  id: string;
+  type: 'reply_speak';
+  ai: string;
+  hint: { en: string; hi: string; native: string };
+  accept: readonly string[];
+  explanation: string;
+}
+
 export type Exercise =
   | McqExercise
   | GapExercise
   | ListenPickExercise
   | MatchPairsExercise
   | OrderWordsExercise
-  | SpeakExercise;
+  | SpeakExercise
+  | TypeGapExercise
+  | DictationExercise
+  | ReplySpeakExercise;
 
 export interface Stage {
   id: 'words' | 'sentences';
@@ -89,9 +120,10 @@ export interface ChatTurn {
   ai: string; // what the AI says before the learner answers
   sentenceId: string; // the sentence the learner should say
   alternatives?: readonly string[]; // other accepted answers (count as exact)
-  hint: { en: string; hi: string }; // always visible; the sentence is behind a tap
+  hint: { en: string; hi: string; native: string }; // always visible; the sentence is behind a tap
   repeat: string; // AI re-asks in character after an unrelated answer
   knownMistakes?: readonly KnownMistake[]; // beat the automatic explanation
+  free?: boolean; // "say it your own way"
 }
 
 export interface Chat {
@@ -110,6 +142,10 @@ export interface LessonContent {
   level: Level;
   objective: string;
   estimatedMinutes: number;
+  unit?: string;
+  order?: number;
+  canDo?: string;
+  focus?: string;
   sentences: readonly Sentence[];
   stages: readonly Stage[];
   chat: Chat;

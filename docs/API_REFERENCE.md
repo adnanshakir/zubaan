@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-10-31
+> **Last verified against code**: 2026-11-02
 
 ---
 
@@ -341,6 +341,7 @@ curl http://localhost:5000/api/home \
 | ---------- | -------- | -------- | --------------------------------------------------------------- |
 | `category` | `string` | No       | One of: `"daily"`, `"work"`, `"career"`, `"travel"`             |
 | `level`    | `string` | No       | One of: `"beginner"`, `"elementary"`, `"intermediate"`, `"advanced"` |
+| `lang`     | `string` | No       | Supported language; defaults to the user's native language, then `"hi"` |
 
 **Success Response** — `200`:
 
@@ -352,6 +353,9 @@ curl http://localhost:5000/api/home \
     "title": "Introduce yourself to a new neighbour",
     "category": "daily",
     "level": "beginner",
+    "unit": "introductions",
+    "order": 1,
+    "canDo": "I can introduce myself to a new neighbour.",
     "objective": "Start a friendly conversation with a new neighbour.",
     "estimatedMinutes": 5,
     "sentenceCount": 6,
@@ -391,6 +395,12 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
 | ----- | -------- | -------- | ------------------------------ |
 | `id`  | `string` | Yes      | Trimmed, min 1 char (ObjectId) |
 
+**Query Parameters**:
+
+| Param  | Type     | Required | Validation |
+|--------|----------|----------|------------|
+| `lang` | `string` | No       | Supported language; defaults to the user's native language, then `"hi"` |
+
 **Success Response** — `200`:
 
 ```json
@@ -400,6 +410,10 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
   "title": "Introduce yourself to a new neighbour",
   "category": "daily",
   "level": "beginner",
+  "unit": "introductions",
+  "order": 1,
+  "canDo": "I can introduce myself to a new neighbour.",
+  "focus": "polite questions",
   "objective": "Start a friendly conversation with a new neighbour.",
   "estimatedMinutes": 5,
   "sentences": [
@@ -407,6 +421,7 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
       "id": "s1",
       "text": "Hi, I am your new neighbour.",
       "hi": "नमस्ते, मैं आपका नया पड़ोसी हूँ।",
+      "meaning": "नमस्ते, मैं आपका नया पड़ोसी हूँ।",
       "tip": "Say \"neighbour\" as NAY-bur.",
       "chunks": ["Hi,", "I am", "your new", "neighbour."]
     }
@@ -427,7 +442,7 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
     "turns": [{
       "ai": "Are you new in the building?",
       "sentenceId": "s1",
-      "hint": { "en": "Greet your neighbour.", "hi": "नमस्ते कहें।" }
+      "hint": { "en": "Greet your neighbour.", "hi": "नमस्ते कहें।", "native": "नमस्ते कहें।" }
     }],
     "closingLine": "Welcome to the building!"
   }
@@ -440,6 +455,8 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
 | ------ | ----------------------------- | ---------------------- |
 | 401    | Missing/invalid `x-user-id`  | `"Unauthorized"`       |
 | 404    | Invalid ObjectId or not found | `"Lesson not found"`   |
+| 400    | Requested language is unsupported | Error code `"LANG_NOT_SUPPORTED"` |
+| 404    | Lesson translation is missing | Error code `"TRANSLATION_NOT_FOUND"` |
 
 **Example curl**:
 
@@ -566,7 +583,8 @@ curl -X POST http://localhost:5000/api/conversations \
 
 `correction` is `null` when the learner's message has no mistake. When
 present it contains the corrected sentence, a short explanation, and a
-mistake type. See `Correction` in §4.
+mistake type. For scripted turns, `hasMistake` and `corrected` can be present
+even when the answer did not advance the turn. See `Correction` in §4.
 `feedback` is `null` unless this turn completed the conversation.
 `revealHint` (`boolean`) — scripted-lesson turns only. `true` when the
 learner's second consecutive off-target attempt triggers the repeat prompt,
@@ -771,11 +789,13 @@ Request body:
 ```
 
 `result` is `correct | wrong` for `mcq`, `gap`, `listen_pick`, `order_words`,
-and `match_pairs`; it is `said | close | missed | skipped` for `speak`.
-`answer` is a string for MCQ/gap/listen-pick and an array of at most 30
-strings, each at most 40 characters, for order-words. The answer text, or
-the joined order-words answer, must be at most 500 characters. The server
-resolves `stageId` and exercise type from the stored lesson. A second
+`match_pairs`, `type_gap`, and `dictation`; it is `said | close | missed |
+skipped` for `speak` and `reply_speak`. `answer` is a string for MCQ,
+gap/listen-pick/type-gap/dictation/reply-speak and an array of at most 30
+strings, each at most 40 characters, for order-words. Type-gap and dictation
+answers must be at most 200 characters; other answer text, or the joined
+order-words answer, must be at most 500 characters. The server resolves
+`stageId` and exercise type from the stored lesson. A second
 non-retry submission returns `{ "recorded": false, "mistakeSaved": false }`.
 Retries only accept `correct` or `wrong`, update `retryResult`, and never
 create a mistake.
@@ -1118,8 +1138,9 @@ curl "http://localhost:5000/api/mistakes/summary" \
 **Stage**:
 
 `{ id: "words" | "sentences"; title: string; intro: string; exercises: Exercise[] }`.
-Exercises are `mcq`, `gap`, `listen_pick`, `match_pairs`, `order_words`, or
-`speak`; see `docs/LESSON_CONTENT.md` for every field. Exercises include
+Exercises are `mcq`, `gap`, `listen_pick`, `match_pairs`, `order_words`,
+`speak`, `type_gap`, `dictation`, or `reply_speak`; see
+`docs/LESSON_CONTENT.md` for every field. Exercises include
 `correct` in lesson detail responses.
 
 **Chat**:
@@ -1395,9 +1416,14 @@ interface LessonListItem {
   estimatedMinutes: number;
   sentenceCount: number;
   exerciseCount: number;
+  unit: string;
+  order: number;
+  canDo: string;
 }
 
 interface LessonDetail extends LessonListItem {
+  focus: string;
+  lang: string;
   sentences: Sentence[];
   stages: Stage[];
   chat: Chat;
@@ -1407,6 +1433,7 @@ interface Sentence {
   id: string;
   text: string;
   hi: string;
+  meaning: string;
   tip: string;
   chunks: string[];
 }
@@ -1419,7 +1446,8 @@ interface Stage {
 }
 
 type Exercise = McqExercise | GapExercise | ListenPickExercise |
-  MatchPairsExercise | OrderWordsExercise | SpeakExercise;
+  MatchPairsExercise | OrderWordsExercise | SpeakExercise | TypeGapExercise |
+  DictationExercise | ReplySpeakExercise;
 
 interface McqExercise {
   id: string; type: "mcq"; prompt: string; promptHi?: string;
@@ -1444,6 +1472,19 @@ interface OrderWordsExercise {
 interface SpeakExercise {
   id: string; type: "speak"; sentenceId: string;
 }
+interface TypeGapExercise {
+  id: string; type: "type_gap"; sentence: string; hi: string;
+  accept: string[]; explanation: string; mistakeType?: MistakeKind;
+}
+interface DictationExercise {
+  id: string; type: "dictation"; text: string; explanation: string;
+  mistakeType?: MistakeKind;
+}
+interface ReplySpeakExercise {
+  id: string; type: "reply_speak"; ai: string;
+  hint: { en: string; hi: string; native: string };
+  accept: string[]; explanation: string;
+}
 
 interface Chat {
   aiRole: string;
@@ -1457,7 +1498,7 @@ interface Chat {
 interface ChatTurn {
   ai: string;
   sentenceId: string;
-  hint: { en: string; hi: string };
+  hint: { en: string; hi: string; native: string };
 }
 
 interface ConversationStartResponse {
