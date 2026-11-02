@@ -6,6 +6,7 @@ import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
 import { LessonAttempt, type LessonAttemptDocument } from '../models/LessonAttempt.js';
 import { createMistake } from './mistakeService.js';
 import { ApiError } from '../utils/ApiError.js';
+import { assertLessonUnlocked, type ProgressUser } from './progressService.js';
 import type { AttemptResultInput, CompleteAttemptInput } from '../validators/attemptValidator.js';
 import type { Correction } from './conversationLlmService.js';
 
@@ -124,6 +125,9 @@ function response(attempt: LessonAttemptDocument) {
 }
 
 export async function createAttempt(userId: Types.ObjectId, lessonId: string) {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, 'User not found');
+  await assertLessonUnlocked(user as ProgressUser, lessonId);
   if (!isValidObjectId(lessonId) || !(await Lesson.exists({ _id: lessonId }))) {
     throw new ApiError(404, 'Lesson not found');
   }

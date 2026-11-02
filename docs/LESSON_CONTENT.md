@@ -80,3 +80,13 @@ them to `lessonSources`. Keep ids stable because attempts and mistakes refer to
 them. To add a language, create a new hi-style translation file, add it to the
 lesson's `lessonSources` entry, and add the language to `SUPPORTED_LANGS` in
 `src/services/lessonBuilder.ts`.
+
+## Path order and unlocking
+
+The learner path is sorted by level rank (`beginner`, `elementary`,
+`intermediate`, `advanced`), then by the numeric `order`, then by `slug`.
+For a learner, lessons through the first lesson at or above their measured
+level are available initially; later lessons unlock only after the previous
+lesson is passed. A lesson is passed at the configured pass score (60 by
+default), or automatically on the learner's third recorded attempt. The
+`LESSONS_UNLOCK_ALL=true` setting makes every lesson available.

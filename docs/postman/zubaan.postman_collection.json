@@ -368,6 +368,56 @@
       "name": "Lessons",
       "item": [
         {
+          "name": "POST /api/lessons/:lessonId/progress - record progress",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{userId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score\": 70,\n  \"conversationId\": \"{{conversationId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/lessons/{{lessonId}}/progress",
+            "description": "Records a completed conversation score. Auth: required. Body: score (integer 0-100) and conversationId (completed conversation belonging to this user and lesson)."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"lessonId\": \"665f1a2b3c4d5e6f7a8b9c0e\",\n  \"bestScore\": 70,\n  \"attempts\": 1,\n  \"passed\": true,\n  \"newlyPassed\": true,\n  \"passScore\": 60,\n  \"nextLessonId\": \"665f1a2b3c4d5e6f7a8b9c0f\",\n  \"completedCount\": 1,\n  \"total\": 12\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Response is JSON', function () { pm.response.to.have.header('Content-Type', /json/); });",
+                  "const data = pm.response.json();",
+                  "pm.test('Response has progress', function () { pm.expect(data).to.have.property('lessonId'); pm.expect(data).to.have.property('completedCount'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "GET /api/lessons - list lessons",
           "request": {
             "method": "GET",

@@ -21,6 +21,7 @@ import { buildConversationFeedback, type ConversationFeedback } from './feedback
 import { recordMistake } from './mistakeService.js';
 import { stepScript, type ScriptState } from '../utils/scripted-lesson.js';
 import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
+import { assertLessonUnlocked, type ProgressUser } from './progressService.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
@@ -71,8 +72,9 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
     throw new ApiError(404, 'Lesson not found');
   }
 
-  const user = await User.findById(userId).select('nativeLanguage').lean();
+  const user = await User.findById(userId);
   if (!user) throw new ApiError(404, 'User not found');
+  await assertLessonUnlocked(user as ProgressUser, input.lessonId);
   const lesson = await getBuiltLesson(input.lessonId, resolveLang(undefined, user));
   if (input.attemptId) {
     if (!isValidObjectId(input.attemptId)) throw new ApiError(400, 'Invalid attemptId');

@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-11-02
+> **Last verified against code**: 2026-11-03
 
 ---
 
@@ -303,13 +303,22 @@ curl -X POST http://localhost:5000/api/onboarding \
     "category": "work",
     "level": "elementary",
     "objective": "Share a clear, concise update with your manager.",
-    "estimatedMinutes": 6
-  }
+    "estimatedMinutes": 6,
+    "progress": {
+      "status": "available",
+      "bestScore": null,
+      "attempts": 0,
+      "unlockAfter": null
+    },
+    "isCurrent": true
+  },
+  "pathProgress": { "completed": 0, "total": 12 },
+  "allCompleted": false
 }
 ```
 
 `greetingName` defaults to `"there"` if the user has no name.
-`recommendedLesson` may be `null`.
+`recommendedLesson` may be `null` when `allCompleted` is `true`.
 
 **Error Responses**:
 
@@ -359,11 +368,20 @@ curl http://localhost:5000/api/home \
     "objective": "Start a friendly conversation with a new neighbour.",
     "estimatedMinutes": 5,
     "sentenceCount": 6,
-    "exerciseCount": 12
+    "exerciseCount": 12,
+    "progress": {
+      "status": "available",
+      "bestScore": null,
+      "attempts": 0,
+      "unlockAfter": null
+    },
+    "isCurrent": true
   }
 ]
 ```
 
+The array is ordered by path (`level`, then `order`, then `slug`). Each lesson
+includes `progress` and `isCurrent`.
 Returns an empty array `[]` if no lessons match.
 
 **Error Responses**:
@@ -413,6 +431,13 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
   "unit": "introductions",
   "order": 1,
   "canDo": "I can introduce myself to a new neighbour.",
+  "progress": {
+    "status": "available",
+    "bestScore": null,
+    "attempts": 0,
+    "unlockAfter": null
+  },
+  "isCurrent": true,
   "focus": "polite questions",
   "objective": "Start a friendly conversation with a new neighbour.",
   "estimatedMinutes": 5,
@@ -466,6 +491,48 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 ```
 
 ---
+
+#### `POST /api/lessons/:lessonId/progress`
+
+Records a completed conversation score for the authenticated user and lesson.
+
+**Request body**:
+
+```json
+{
+  "score": 70,
+  "conversationId": "665f1a2b3c4d5e6f7a8b9c10"
+}
+```
+
+`score` is an integer from 0 to 100 and `conversationId` must be an ObjectId
+belonging to the user and lesson. The conversation must have status
+`"completed"`. A conversation can only be recorded once.
+
+**Success Response** — `200`:
+
+```json
+{
+  "lessonId": "665f1a2b3c4d5e6f7a8b9c0e",
+  "bestScore": 70,
+  "attempts": 1,
+  "passed": true,
+  "newlyPassed": true,
+  "passScore": 60,
+  "nextLessonId": "665f1a2b3c4d5e6f7a8b9c0f",
+  "completedCount": 1,
+  "total": 12
+}
+```
+
+**Error Responses**:
+
+| Status | When | Message |
+| ------ | ---- | ------- |
+| 400 | Invalid score, conversation, or unfinished conversation | Validation or `"Conversation must be completed"` |
+| 401 | Missing/invalid `x-user-id` | `"Unauthorized"` |
+| 404 | Lesson or conversation not found | `"Lesson not found"` or `"Conversation not found"` |
+| 403 | Lesson is locked | `"Finish the previous lesson to unlock this one."`, code `"LESSON_LOCKED"` |
 
 ### 3.5 Conversations
 
@@ -1404,6 +1471,8 @@ interface OnboardingResponse {
 interface HomeResponse {
   greetingName: string;
   recommendedLesson: LessonListItem | null;
+  pathProgress: { completed: number; total: number };
+  allCompleted: boolean;
 }
 
 interface LessonListItem {
@@ -1419,6 +1488,13 @@ interface LessonListItem {
   unit: string;
   order: number;
   canDo: string;
+  progress: {
+    status: "locked" | "available" | "completed";
+    bestScore: number | null;
+    attempts: number;
+    unlockAfter: { id: string; title: string } | null;
+  };
+  isCurrent: boolean;
 }
 
 interface LessonDetail extends LessonListItem {
@@ -1427,6 +1503,18 @@ interface LessonDetail extends LessonListItem {
   sentences: Sentence[];
   stages: Stage[];
   chat: Chat;
+}
+
+interface LessonProgressResponse {
+  lessonId: string;
+  bestScore: number;
+  attempts: number;
+  passed: boolean;
+  newlyPassed: boolean;
+  passScore: number;
+  nextLessonId: string | null;
+  completedCount: number;
+  total: number;
 }
 
 interface Sentence {
@@ -1935,6 +2023,8 @@ All environment variable **names** (never values):
 | `STT_MAX_DURATION_SECONDS` | Yes (audio length limit)  | Default: 30, max: 30                     |
 | `KOKORO_TTS_URL`           | No                        | Default: `https://tts-system.vercel.app/api/tts` |
 | `KOKORO_TIMEOUT_MS`        | Yes (latency)             | Default: 90000                           |
+| `LESSONS_UNLOCK_ALL`       | Yes (lesson path)         | Boolean string `"true"`/`"false"`; default: `"false"` |
+| `LESSON_PASS_SCORE`        | Yes (lesson progress)     | Integer 1–100; default: 60                |
 
 ---
 
