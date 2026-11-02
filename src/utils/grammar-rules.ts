@@ -22,7 +22,7 @@ const re = (source: string, flags = 'i'): RegExp => new RegExp(source, flags);
 
 // "does he have" is correct, so a verb right after an auxiliary is never flagged.
 const NOT_AFTER_AUX =
-  '(?<!\\b(?:does|did|do|will|would|can|could|should|shall|may|might|must)\\s+)';
+  "(?<!\\b(?:does|did|do|will|would|can|could|should|shall|may|might|must|won't|can't|shan't|wouldn't|couldn't|shouldn't|mustn't|mightn't|needn't)\\s+)";
 // "a two year contract" is fine, so a number right after "a" or "an" is skipped.
 const NOT_AFTER_A = '(?<!\\b(?:a|an)\\s+)';
 // The phrase must clearly end: "two years of experience", "two friends."
@@ -266,7 +266,7 @@ const RULES: readonly Rule[] = [
   // "a feedback" -> "some feedback"
   {
     pattern: re(
-      '\\b(?:a|an)\\s+(information|advice|feedback|furniture|equipment|homework|luggage)\\b',
+      `\\b(?:a|an)\\s+(information|advice|feedback|furniture|equipment|homework|luggage)${ENDS}`,
     ),
     fix: (m) => keepCase(g(m, 0), `some ${g(m, 1)}`),
     explain: (m) =>
@@ -348,7 +348,7 @@ const RULES: readonly Rule[] = [
   // "a engineer" -> "an engineer"
   {
     pattern: re(
-      '\\b([Aa])\\s+(?!(?:one|once|eu|other)[a-z]*\\b)([aeio][a-z]*|umbrella|uncle|ugly|upper|upset|unhappy|unusual|unable)\\b',
+      '\\b([Aa])\\s+(?!(?:one|once|eu|other)[a-z]*\\b)(?!(?:is|in|it|if|or|on|at|of|as|am|us)\\b)([aeio][a-z]*|umbrella|uncle|ugly|upper|upset|unhappy|unusual|unable)\\b',
       '',
     ),
     fix: (m) => `${g(m, 1)}n ${g(m, 2)}`,

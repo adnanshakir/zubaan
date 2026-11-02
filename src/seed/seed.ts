@@ -8,7 +8,9 @@ import { createHash } from 'node:crypto';
 async function seedLessons(): Promise<number> {
   const lessonIds = [];
   for (const { def, translations } of lessonSources) {
-    const version = createHash('sha1').update(JSON.stringify(def)).digest('hex');
+    const version = createHash('sha256')
+      .update(JSON.stringify({ def, translations }))
+      .digest('hex');
     await Lesson.replaceOne({ slug: def.slug }, { ...def, version }, { upsert: true });
     const lesson = await Lesson.findOne({ slug: def.slug }).select('_id').lean();
     if (!lesson) throw new Error(`Seeded lesson could not be loaded: ${def.slug}`);

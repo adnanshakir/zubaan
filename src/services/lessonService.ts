@@ -120,6 +120,7 @@ export async function getLessonById(
   return {
     ...toLessonListItem(lesson),
     lang: lesson.lang,
+    focus: lesson.focus ?? '',
     sentences: lesson.sentences,
     stages: lesson.stages,
     chat: {

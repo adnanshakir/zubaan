@@ -37,16 +37,23 @@ export const lessonSources: { def: LessonDef; translations: Record<string, Lesso
     { def: negotiationLesson, translations: { hi: negotiationHi } },
   ];
 
-export const lessons: readonly LessonContent[] = lessonSources.map(({ def, translations }) =>
-  buildLesson(def, translations.hi),
-);
+let _lessons: readonly LessonContent[] | undefined;
+
+/** Lazily built on first access so module loading does not eagerly call buildLesson. */
+export function getLessons(): readonly LessonContent[] {
+  if (!_lessons) {
+    _lessons = lessonSources.map(({ def, translations }) => buildLesson(def, translations.hi));
+  }
+  return _lessons;
+}
 
 /** Call this at the start of the seed script; it throws if any lesson is inconsistent. */
 export function assertLessonsValid(): void {
   const problems = lessonSources.flatMap(({ def, translations }) => {
     const authoringProblems = validateAuthoring(def, translations.hi);
+    if (authoringProblems.length > 0) return authoringProblems;
     const lesson = buildLesson(def, translations.hi);
-    return [...authoringProblems, ...validateLesson(lesson)];
+    return validateLesson(lesson);
   });
   if (problems.length > 0) {
     throw new Error(`Invalid lesson content:\n${problems.join('\n')}`);
