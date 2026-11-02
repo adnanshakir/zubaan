@@ -1,9 +1,10 @@
 import { isValidObjectId, type Types } from 'mongoose';
 import { Conversation } from '../models/Conversation.js';
 import { LessonAttempt } from '../models/LessonAttempt.js';
-import { Lesson } from '../models/Lesson.js';
+import { User } from '../models/User.js';
 import { buildConversationPrompt } from '../prompts/conversationPrompt.js';
 import { synthesizeSpeechToStoredAudio } from './speechService.js';
+import type { UserDocument } from '../models/User.js';
 import type { Level } from '../types/content.js';
 import { ApiError } from '../utils/ApiError.js';
 import { logger } from '../utils/logger.js';
@@ -19,6 +20,7 @@ import {
 import { buildConversationFeedback, type ConversationFeedback } from './feedbackService.js';
 import { recordMistake } from './mistakeService.js';
 import { stepScript, type ScriptState } from '../utils/scripted-lesson.js';
+import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
 
 type ConversationMessage = {
   role: 'user' | 'ai';
@@ -35,6 +37,7 @@ type ConversationUser = {
   _id: Types.ObjectId;
   level: Level;
   name?: string | null;
+  nativeLanguage: UserDocument['nativeLanguage'];
 };
 
 function toConversationMessage(message: ConversationMessage) {
@@ -68,16 +71,14 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
     throw new ApiError(404, 'Lesson not found');
   }
 
-  const lesson = await Lesson.findById(input.lessonId);
-
-  if (!lesson) {
-    throw new ApiError(404, 'Lesson not found');
-  }
+  const user = await User.findById(userId).select('nativeLanguage').lean();
+  if (!user) throw new ApiError(404, 'User not found');
+  const lesson = await getBuiltLesson(input.lessonId, resolveLang(undefined, user));
   if (input.attemptId) {
     if (!isValidObjectId(input.attemptId)) throw new ApiError(400, 'Invalid attemptId');
     const attempt = await LessonAttempt.findOne({
       _id: input.attemptId,
-      lessonId: lesson._id,
+      lessonId: lesson.id,
       userId,
     });
     if (!attempt) throw new ApiError(400, 'Attempt does not belong to this lesson and user');
@@ -90,7 +91,7 @@ export async function startConversation(userId: Types.ObjectId, input: Conversat
 
   const conversation = await Conversation.create({
     userId,
-    lessonId: lesson._id,
+    lessonId: lesson.id,
     ...(input.attemptId ? { attemptId: input.attemptId } : {}),
     status: 'active',
     messages: [
@@ -154,11 +155,10 @@ export async function takeConversationTurn(
 ) {
   const existingConversation = await findOwnedConversation(user._id, conversationId);
 
-  const lesson = await Lesson.findById(existingConversation.lessonId);
-
-  if (!lesson) {
-    throw new ApiError(404, 'Lesson not found');
-  }
+  const lesson = await getBuiltLesson(
+    existingConversation.lessonId.toString(),
+    resolveLang(undefined, user),
+  );
 
   const chat = lesson.chat;
   const maxTurns = chat.turns.length * 3;
@@ -224,6 +224,7 @@ export async function takeConversationTurn(
           sentenceId: turn.sentenceId,
           alternatives: turn.alternatives,
           repeat: turn.repeat,
+          free: turn.free,
           knownMistakes: turn.knownMistakes?.map((mistake) => ({
             wrong: mistake.wrong,
             explanation: mistake.explanation,
@@ -244,7 +245,7 @@ export async function takeConversationTurn(
     updatedConversation.script = step.state;
 
     const correction =
-      step.check.outcome === 'close'
+      step.outcome !== 'moved_on' && step.check.corrected
         ? {
             corrected: step.check.corrected,
             explanation: step.check.explanation,
@@ -283,7 +284,7 @@ export async function takeConversationTurn(
       await recordMistake({
         userId: user._id,
         conversationId: existingConversation._id,
-        lessonId: lesson._id,
+        lessonId: existingConversation.lessonId,
         original: input.text,
         correction,
       });
@@ -297,10 +298,10 @@ export async function takeConversationTurn(
         current: Math.min(step.state.turnIndex + 1, chat.turns.length),
         total: chat.turns.length,
       },
-      hasMistake: step.check.outcome === 'close',
-      corrected: step.check.corrected,
-      explanation: step.check.explanation,
-      mistakeType: step.check.mistakeType,
+      hasMistake: correction !== null,
+      corrected: correction?.corrected ?? '',
+      explanation: correction?.explanation ?? '',
+      mistakeType: correction?.type ?? 'other',
       correction,
       revealHint: step.revealHint,
       feedback,
@@ -378,7 +379,7 @@ export async function takeConversationTurn(
     await recordMistake({
       userId: user._id,
       conversationId: existingConversation._id,
-      lessonId: lesson._id,
+      lessonId: existingConversation.lessonId,
       original: input.text,
       correction,
     });

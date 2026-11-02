@@ -1,3 +1,5 @@
+import { checkGrammar } from './grammar-rules.js';
+
 export type CheckType = 'grammar' | 'tense' | 'preposition' | 'word_choice' | 'other';
 
 export interface TurnCheck {
@@ -220,6 +222,7 @@ export interface ScriptTurn {
   sentenceId: string;
   alternatives?: readonly string[];
   repeat: string;
+  free?: boolean;
   knownMistakes?: readonly {
     wrong: string;
     explanation: string;
@@ -267,6 +270,10 @@ function matchedWordRatio(target: string, said: string): number {
   );
 }
 
+function latinWordCount(text: string): number {
+  return text.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g)?.length ?? 0;
+}
+
 export function stepScript(
   chat: { turns: readonly ScriptTurn[]; closingLine: string },
   sentences: readonly ScriptSentence[],
@@ -290,6 +297,15 @@ export function stepScript(
     throw new Error(`Scripted lesson turn references unknown sentence ${turn.sentenceId}`);
   }
   const candidates = [sentence.text, ...(turn.alternatives ?? [])];
+  const grammar = checkGrammar(userText);
+  const grammarCheck: TurnCheck | null = grammar
+    ? {
+        outcome: 'close',
+        corrected: grammar.corrected,
+        explanation: grammar.fixes.map((fix) => fix.explanation).join(' '),
+        mistakeType: grammar.fixes[0]?.type ?? 'other',
+      }
+    : null;
   const checks = candidates.map((candidate) => checkAgainstTarget(candidate, userText));
   const exactIndex = checks.findIndex((candidate) => candidate.outcome === 'exact');
   const bestIndex =
@@ -304,13 +320,29 @@ export function stepScript(
           0,
         );
   const selected = checks[bestIndex] ?? OFF;
-  const check: TurnCheck =
-    selected.outcome === 'off'
-      ? selected
-      : {
-          ...selected,
-          corrected: candidates[bestIndex] ?? sentence.text,
-        };
+  let check: TurnCheck;
+  if (exactIndex >= 0) {
+    check = {
+      ...checks[exactIndex],
+      corrected: '',
+      explanation: '',
+      mistakeType: 'other',
+    };
+  } else if (turn.free === true && latinWordCount(userText) >= 3) {
+    check = grammarCheck ?? {
+      outcome: 'exact',
+      corrected: '',
+      explanation: '',
+      mistakeType: 'other',
+    };
+  } else if (selected.outcome === 'off') {
+    check = grammarCheck ? { ...grammarCheck, outcome: 'off' } : selected;
+  } else {
+    check = {
+      ...selected,
+      corrected: candidates[bestIndex] ?? sentence.text,
+    };
+  }
   if (check.outcome === 'close') {
     const answerWords = tokenize(userText);
     const known = (turn.knownMistakes ?? []).filter((mistake) =>

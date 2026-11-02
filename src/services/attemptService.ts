@@ -1,5 +1,8 @@
 import { isValidObjectId, type Types } from 'mongoose';
 import { Lesson } from '../models/Lesson.js';
+import type { UserDocument } from '../models/User.js';
+import { User } from '../models/User.js';
+import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
 import { LessonAttempt, type LessonAttemptDocument } from '../models/LessonAttempt.js';
 import { createMistake } from './mistakeService.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -13,10 +16,12 @@ type Exercise = {
   sentence?: string;
   correct?: string;
   answer?: string;
+  accept?: readonly string[];
+  text?: string;
   explanation?: string;
 };
 
-type Stage = { id: string; exercises: Exercise[] };
+type Stage = { id: string; exercises: readonly Exercise[] };
 
 function findAttempt(userId: Types.ObjectId, attemptId: string): Promise<LessonAttemptDocument> {
   if (!isValidObjectId(attemptId)) throw new ApiError(404, 'Attempt not found');
@@ -26,10 +31,13 @@ function findAttempt(userId: Types.ObjectId, attemptId: string): Promise<LessonA
   });
 }
 
-async function getExercise(attempt: LessonAttemptDocument, exerciseId: string) {
-  const lesson = await Lesson.findById(attempt.lessonId).lean();
-  if (!lesson) throw new ApiError(404, 'Lesson not found');
-  const stages = lesson.stages as unknown as Stage[];
+async function getExercise(
+  attempt: LessonAttemptDocument,
+  exerciseId: string,
+  user: Pick<UserDocument, 'nativeLanguage'>,
+) {
+  const lesson = await getBuiltLesson(attempt.lessonId.toString(), resolveLang(undefined, user));
+  const stages = lesson.stages as readonly Stage[];
   for (const stage of stages) {
     const exercise = stage.exercises.find((candidate) => candidate.id === exerciseId);
     if (exercise) return { lesson, stage, exercise };
@@ -39,16 +47,20 @@ async function getExercise(attempt: LessonAttemptDocument, exerciseId: string) {
 
 function validateAnswer(exercise: Exercise, answer: string | string[] | undefined): void {
   if (answer === undefined) return;
-  if (['mcq', 'gap', 'listen_pick'].includes(exercise.type) && typeof answer !== 'string') {
+  if (
+    ['mcq', 'gap', 'listen_pick', 'type_gap', 'dictation', 'reply_speak'].includes(exercise.type) &&
+    typeof answer !== 'string'
+  ) {
     throw new ApiError(400, 'answer must be a string');
   }
   if (typeof answer === 'string') {
     const storedText =
-      exercise.type === 'gap' && exercise.sentence
+      ['gap', 'type_gap'].includes(exercise.type) && exercise.sentence
         ? exercise.sentence.replace('___', answer)
         : answer;
-    if (storedText.length > 500) {
-      throw new ApiError(400, 'answer must produce text of at most 500 characters');
+    const maxLength = ['type_gap', 'dictation'].includes(exercise.type) ? 200 : 500;
+    if (storedText.length > maxLength) {
+      throw new ApiError(400, `answer must produce text of at most ${maxLength} characters`);
     }
   }
   if (exercise.type === 'order_words') {
@@ -67,11 +79,17 @@ function mistakeText(
   exercise: Exercise,
   answer: string | string[],
 ): { original: string; corrected: string } {
-  if (exercise.type === 'gap') {
+  if (exercise.type === 'gap' || exercise.type === 'type_gap') {
     return {
       original: exercise.sentence!.replace('___', String(answer)),
-      corrected: exercise.sentence!.replace('___', exercise.correct!),
+      corrected: exercise.sentence!.replace(
+        '___',
+        exercise.type === 'type_gap' ? exercise.accept![0] : exercise.correct!,
+      ),
     };
+  }
+  if (exercise.type === 'dictation') {
+    return { original: String(answer), corrected: exercise.text! };
   }
   if (exercise.type === 'order_words') {
     return { original: (answer as string[]).join(' '), corrected: exercise.answer! };
@@ -119,13 +137,21 @@ export async function recordAttemptResult(
   input: AttemptResultInput,
 ) {
   const attempt = await findAttempt(userId, attemptId);
-  const { lesson, stage, exercise } = await getExercise(attempt, input.exerciseId);
+  const user = await User.findById(userId).select('nativeLanguage').lean();
+  if (!user) throw new ApiError(404, 'User not found');
+  const { stage, exercise } = await getExercise(attempt, input.exerciseId, user);
   validateAnswer(exercise, input.answer);
-  const allowed = ['mcq', 'gap', 'listen_pick', 'order_words', 'match_pairs'].includes(
-    exercise.type,
-  )
+  const allowed = [
+    'mcq',
+    'gap',
+    'listen_pick',
+    'order_words',
+    'match_pairs',
+    'type_gap',
+    'dictation',
+  ].includes(exercise.type)
     ? ['correct', 'wrong']
-    : exercise.type === 'speak'
+    : exercise.type === 'reply_speak' || exercise.type === 'speak'
       ? ['said', 'close', 'missed', 'skipped']
       : [];
   if (!allowed.includes(input.result)) throw new ApiError(400, 'Invalid result for exercise type');
@@ -157,7 +183,7 @@ export async function recordAttemptResult(
     mistakeSaved = await createMistake({
       userId,
       attemptId: attempt._id,
-      lessonId: lesson._id,
+      lessonId: attempt.lessonId,
       original: text.original,
       correction: {
         corrected: text.corrected,
