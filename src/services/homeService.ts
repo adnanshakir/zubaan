@@ -14,6 +14,7 @@ export async function getHomeData(user: UserDocument & { _id: Types.ObjectId }) 
       completed,
       total: lessons.length,
     },
+    placementDone: user.placement?.measured !== undefined,
     allCompleted: recommendedLesson === null,
   };
 }

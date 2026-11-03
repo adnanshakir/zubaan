@@ -17,12 +17,13 @@
    - [Health](#31-health)
    - [Onboarding](#32-onboarding)
    - [Home](#33-home)
-   - [Lessons](#34-lessons)
-   - [Conversations](#35-conversations)
-   - [Lesson Attempts](#36-lesson-attempts)
-   - [Speech — TTS](#37-speech--tts)
-   - [Speech — STT](#38-speech--stt)
-   - [Mistakes](#39-mistakes)
+   - [Placement](#34-placement)
+   - [Lessons](#35-lessons)
+   - [Conversations](#36-conversations)
+   - [Lesson Attempts](#37-lesson-attempts)
+   - [Speech — TTS](#38-speech--tts)
+   - [Speech — STT](#39-speech--stt)
+   - [Mistakes](#310-mistakes)
 4. [Data Models](#4-data-models)
 5. [Flows](#5-flows)
 6. [Providers and Configuration](#6-providers-and-configuration)
@@ -313,12 +314,14 @@ curl -X POST http://localhost:5000/api/onboarding \
     "isCurrent": true
   },
   "pathProgress": { "completed": 0, "total": 12 },
+  "placementDone": false,
   "allCompleted": false
 }
 ```
 
 `greetingName` defaults to `"there"` if the user has no name.
 `recommendedLesson` may be `null` when `allCompleted` is `true`.
+`placementDone` is `true` when `placement.measured` is set.
 
 **Error Responses**:
 
@@ -335,7 +338,42 @@ curl http://localhost:5000/api/home \
 
 ---
 
-### 3.4 Lessons
+### 3.4 Placement
+
+All placement endpoints require the `x-user-id` header.
+
+#### `GET /api/placement`
+
+Optional query parameter: `lang` (currently `"hi"`). The response contains
+the four-tier ladder, localized instructions, and items in authored order.
+Missing translations return `404` with code `TRANSLATION_NOT_FOUND`.
+
+#### `POST /api/placement/result`
+
+Request body:
+
+```json
+{
+  "answers": [
+    { "itemId": "p1-1", "passed": true },
+    { "itemId": "p1-2", "passed": true, "skipped": false }
+  ],
+  "sample": "I went to work today."
+}
+```
+
+`answers` contains 1–12 unique item answers. `sample` is optional, trimmed,
+limited to 1000 characters, and stored only when it contains a Latin letter.
+The `200` response is `{ "level", "tiersPassed", "understanding", "speaking" }`.
+
+#### `PUT /api/placement/level`
+
+Request body: `{ "level": "elementary", "source": "manual" }`.
+`level` is one of `beginner`, `elementary`, `intermediate`, or `advanced`.
+`source` is optional and is `manual` or `beginner` (default `manual`).
+The `200` response is `{ "level": "elementary" }`.
+
+### 3.5 Lessons
 
 #### `GET /api/lessons`
 
@@ -1170,6 +1208,9 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `dailyGoalMinutes` | number   | No       | `10`    |                                |
 | `placement.selfReported` | string | Yes   | —       | Enum: `Level`                  |
 | `placement.measured`     | string | No    | —       | Enum: `Level`                  |
+| `placement.source`       | string | No    | —       | `test`, `beginner`, or `manual` |
+| `placement.completedAt`  | Date   | No    | —       | Placement completion time       |
+| `placement.sample`       | string | No    | —       | Trimmed Latin-script sample, max 1000 chars |
 | `createdAt`        | Date     | Auto     | —       | Mongoose timestamps            |
 | `updatedAt`        | Date     | Auto     | —       | Mongoose timestamps            |
 
@@ -1752,6 +1793,9 @@ interface User {
   placement: {
     selfReported: Level;
     measured?: Level;
+    source?: 'test' | 'beginner' | 'manual';
+    completedAt?: string;
+    sample?: string;
   };
   createdAt: string;
   updatedAt: string;

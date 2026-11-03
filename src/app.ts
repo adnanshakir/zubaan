@@ -10,6 +10,7 @@ import { homeRouter } from './routes/homeRoutes.js';
 import { lessonRouter } from './routes/lessonRoutes.js';
 import { mistakeRouter } from './routes/mistakeRoutes.js';
 import { onboardingRouter } from './routes/onboardingRoutes.js';
+import { placementRouter } from './routes/placementRoutes.js';
 import { speechRouter } from './routes/speechRoutes.js';
 import type { ApiResponse } from './types/common.js';
 import { getAudioStorageDirPath } from './utils/audioStorage.js';
@@ -59,6 +60,7 @@ app.use(
 );
 
 app.use('/api/onboarding', onboardingRouter);
+app.use('/api/placement', placementRouter);
 app.use('/api/lessons', lessonRouter);
 app.use('/api/mistakes', mistakeRouter);
 app.use('/api/conversations', conversationRouter);

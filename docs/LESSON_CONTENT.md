@@ -90,3 +90,15 @@ level are available initially; later lessons unlock only after the previous
 lesson is passed. A lesson is passed at the configured pass score (60 by
 default), or automatically on the learner's third recorded attempt. The
 `LESSONS_UNLOCK_ALL=true` setting makes every lesson available.
+
+## Placement
+
+Placement uses a four-tier adaptive ladder with three items per tier. A tier
+passes when at least two answers pass; the measured level is the number of
+consecutive tiers passed (`beginner`, `elementary`, `intermediate`, or
+`advanced`). Each tier includes a reading-aloud item second, and skipped
+reading items are excluded from speaking totals.
+
+To add or change placement items, edit `src/content/placement/items.ts` and
+the matching Hindi lines in `src/content/placement/hi.ts`. Keep exactly three
+items per tier and keep the `read_aloud` item second.
