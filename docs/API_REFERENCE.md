@@ -572,7 +572,7 @@ belonging to the user and lesson. The conversation must have status
 | 404 | Lesson or conversation not found | `"Lesson not found"` or `"Conversation not found"` |
 | 403 | Lesson is locked | `"Finish the previous lesson to unlock this one."`, code `"LESSON_LOCKED"` |
 
-### 3.5 Conversations
+### 3.6 Conversations
 
 #### `POST /api/conversations`
 
@@ -872,7 +872,7 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 
 ---
 
-### 3.6 Lesson Attempts
+### 3.7 Lesson Attempts
 
 All attempt endpoints require `x-user-id`.
 
@@ -941,7 +941,7 @@ an exercise `mistakeType` and an answer. Mistake-bank records are deduplicated
 using the same user, lesson, original, corrected, and type key as conversation
 corrections.
 
-### 3.7 Speech — TTS
+### 3.8 Speech — TTS
 
 #### `POST /api/speech/tts`
 
@@ -1026,7 +1026,7 @@ curl -X POST http://localhost:5000/api/speech/tts \
 
 ---
 
-### 3.8 Speech — STT
+### 3.9 Speech — STT
 
 #### `POST /api/speech/stt`
 
@@ -1110,7 +1110,7 @@ curl -X POST http://localhost:5000/api/speech/stt \
 
 ---
 
-### 3.9 Mistakes
+### 3.10 Mistakes
 
 The mistake bank stores non-null corrections found during conversation turns
 and returns only the authenticated user's mistakes.
@@ -2014,7 +2014,7 @@ requests share one file.
 - Mode: configurable via `mode` request field or `SARVAM_STT_MODE` (default: `codemix`)
 - Modes: `transcribe`, `verbatim`, `codemix`, `translit`
 - Supports 24 Indian language codes (see §4.5)
-- Accepts many audio formats (see §3.8)
+- Accepts many audio formats (see §3.9)
 - Timeout: `SARVAM_STT_TIMEOUT_MS` (default: 15000)
 - Max file size: `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB)
 - Max duration: `STT_MAX_DURATION_SECONDS` (default: 30 seconds)
@@ -2081,7 +2081,7 @@ All environment variable **names** (never values):
 | STT max file size               | `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes) |
 | STT max audio duration          | 30 seconds                     |
 | Unknown metadata duration       | Full scan once when within the file-size cap; otherwise Sarvam is the 30-second backstop |
-| STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.8) |
+| STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.9) |
 | Recommended recording format    | 16 kHz mono WAV                |
 | TTS output format               | WAV (both providers)           |
 

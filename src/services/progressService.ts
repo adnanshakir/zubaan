@@ -105,6 +105,9 @@ export async function recordProgress(
   const path = await getPathForUser(user);
   const lessonIndex = path.lessons.findIndex((lesson) => lesson.id === lessonId);
   if (lessonIndex === -1) throw new ApiError(404, 'Lesson not found');
+  if (path.items.get(lessonId)?.status === 'locked') {
+    throw new ApiError(403, 'Finish the previous lesson to unlock this one.', 'LESSON_LOCKED');
+  }
 
   const conversation = await Conversation.findOne({
     _id: conversationId,
