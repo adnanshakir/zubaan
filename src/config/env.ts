@@ -40,6 +40,11 @@ const envSchema = z
     STT_MAX_DURATION_SECONDS: z.coerce.number().min(1).max(30).default(30),
     KOKORO_TTS_URL: z.string().trim().url().default('https://tts-system.vercel.app/api/tts'),
     KOKORO_TIMEOUT_MS: z.coerce.number().int().min(1000).default(90000),
+    LESSONS_UNLOCK_ALL: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    LESSON_PASS_SCORE: z.coerce.number().int().min(1).max(100).default(60),
   })
   .superRefine((value, ctx) => {
     if (value.LLM_PROVIDER === 'sarvam' && !value.SARVAM_API_KEY) {

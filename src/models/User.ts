@@ -36,6 +36,17 @@ const userSchema = new Schema(
         type: String,
         enum: levels,
       },
+      source: {
+        type: String,
+        enum: ['test', 'beginner', 'manual'],
+      },
+      completedAt: {
+        type: Date,
+      },
+      sample: {
+        type: String,
+        maxlength: 1000,
+      },
     },
   },
   {

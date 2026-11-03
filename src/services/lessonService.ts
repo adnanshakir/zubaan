@@ -1,4 +1,5 @@
 import { isValidObjectId } from 'mongoose';
+import type { Types } from 'mongoose';
 import type { UserDocument } from '../models/User.js';
 import {
   goalCategoryMap,
@@ -10,6 +11,9 @@ import {
 import { ApiError } from '../utils/ApiError.js';
 import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
 import { Lesson } from '../models/Lesson.js';
+import { getPathForUser } from './progressService.js';
+
+type UserWithId = UserDocument & { _id: Types.ObjectId };
 
 export type LessonListItem = {
   id: string;
@@ -24,6 +28,13 @@ export type LessonListItem = {
   unit: string;
   order: number;
   canDo: string;
+  progress?: {
+    status: 'locked' | 'available' | 'completed';
+    bestScore: number | null;
+    attempts: number;
+    unlockAfter: { id: string; title: string } | null;
+  };
+  isCurrent?: boolean;
 };
 
 type LessonFilters = {
@@ -63,13 +74,9 @@ function toLessonListItem(lesson: {
   };
 }
 
-function sortLessons(a: LessonListItem, b: LessonListItem): number {
-  return levels.indexOf(a.level) - levels.indexOf(b.level) || a.order - b.order;
-}
-
 export async function listLessons(
   filters: LessonFilters,
-  user: Pick<UserDocument, 'nativeLanguage'>,
+  user: UserWithId,
 ): Promise<LessonListItem[]> {
   const { lang: requestedLang, ...query } = filters;
   const lang = resolveLang(requestedLang, user);
@@ -77,7 +84,29 @@ export async function listLessons(
   const built = await Promise.all(
     lessons.map((lesson) => getBuiltLesson(lesson._id.toString(), lang)),
   );
-  return built.map((lesson) => toLessonListItem(lesson)).sort(sortLessons);
+  const path = await getPathForUser(user);
+  return built
+    .map((lesson) => {
+      const item = toLessonListItem(lesson);
+      const progress = path.items.get(item.id);
+      return progress
+        ? {
+            ...item,
+            progress: {
+              status: progress.status,
+              bestScore: progress.bestScore,
+              attempts: progress.attempts,
+              unlockAfter: progress.unlockAfter,
+            },
+            isCurrent: progress.isCurrent,
+          }
+        : item;
+    })
+    .sort((a, b) => {
+      const aIndex = path.lessons.findIndex((lesson) => lesson.id === a.id);
+      const bIndex = path.lessons.findIndex((lesson) => lesson.id === b.id);
+      return aIndex - bIndex;
+    });
 }
 
 export async function getRecommended(
@@ -109,16 +138,23 @@ export async function getRecommended(
     : null;
 }
 
-export async function getLessonById(
-  id: string,
-  user: Pick<UserDocument, 'nativeLanguage'>,
-  requestedLang?: string,
-) {
+export async function getLessonById(id: string, user: UserWithId, requestedLang?: string) {
   if (!isValidObjectId(id)) throw new ApiError(404, 'Lesson not found');
   const lang = resolveLang(requestedLang, user);
   const lesson = await getBuiltLesson(id, lang);
+  const path = await getPathForUser(user);
+  const pathItem = path.items.get(id);
   return {
     ...toLessonListItem(lesson),
+    progress: pathItem
+      ? {
+          status: pathItem.status,
+          bestScore: pathItem.bestScore,
+          attempts: pathItem.attempts,
+          unlockAfter: pathItem.unlockAfter,
+        }
+      : undefined,
+    isCurrent: pathItem?.isCurrent ?? false,
     lang: lesson.lang,
     focus: lesson.focus ?? '',
     sentences: lesson.sentences,

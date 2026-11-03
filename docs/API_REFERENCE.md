@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-11-02
+> **Last verified against code**: 2026-11-03
 
 ---
 
@@ -17,12 +17,13 @@
    - [Health](#31-health)
    - [Onboarding](#32-onboarding)
    - [Home](#33-home)
-   - [Lessons](#34-lessons)
-   - [Conversations](#35-conversations)
-   - [Lesson Attempts](#36-lesson-attempts)
-   - [Speech — TTS](#37-speech--tts)
-   - [Speech — STT](#38-speech--stt)
-   - [Mistakes](#39-mistakes)
+   - [Placement](#34-placement)
+   - [Lessons](#35-lessons)
+   - [Conversations](#36-conversations)
+   - [Lesson Attempts](#37-lesson-attempts)
+   - [Speech — TTS](#38-speech--tts)
+   - [Speech — STT](#39-speech--stt)
+   - [Mistakes](#310-mistakes)
 4. [Data Models](#4-data-models)
 5. [Flows](#5-flows)
 6. [Providers and Configuration](#6-providers-and-configuration)
@@ -303,13 +304,24 @@ curl -X POST http://localhost:5000/api/onboarding \
     "category": "work",
     "level": "elementary",
     "objective": "Share a clear, concise update with your manager.",
-    "estimatedMinutes": 6
-  }
+    "estimatedMinutes": 6,
+    "progress": {
+      "status": "available",
+      "bestScore": null,
+      "attempts": 0,
+      "unlockAfter": null
+    },
+    "isCurrent": true
+  },
+  "pathProgress": { "completed": 0, "total": 12 },
+  "placementDone": false,
+  "allCompleted": false
 }
 ```
 
 `greetingName` defaults to `"there"` if the user has no name.
-`recommendedLesson` may be `null`.
+`recommendedLesson` may be `null` when `allCompleted` is `true`.
+`placementDone` is `true` when `placement.measured` is set.
 
 **Error Responses**:
 
@@ -326,7 +338,42 @@ curl http://localhost:5000/api/home \
 
 ---
 
-### 3.4 Lessons
+### 3.4 Placement
+
+All placement endpoints require the `x-user-id` header.
+
+#### `GET /api/placement`
+
+Optional query parameter: `lang` (currently `"hi"`). The response contains
+the four-tier ladder, localized instructions, and items in authored order.
+Missing translations return `404` with code `TRANSLATION_NOT_FOUND`.
+
+#### `POST /api/placement/result`
+
+Request body:
+
+```json
+{
+  "answers": [
+    { "itemId": "p1-1", "passed": true },
+    { "itemId": "p1-2", "passed": true, "skipped": false }
+  ],
+  "sample": "I went to work today."
+}
+```
+
+`answers` contains 1–12 unique item answers. `sample` is optional, trimmed,
+limited to 1000 characters, and stored only when it contains a Latin letter.
+The `200` response is `{ "level", "tiersPassed", "understanding", "speaking" }`.
+
+#### `PUT /api/placement/level`
+
+Request body: `{ "level": "elementary", "source": "manual" }`.
+`level` is one of `beginner`, `elementary`, `intermediate`, or `advanced`.
+`source` is optional and is `manual` or `beginner` (default `manual`).
+The `200` response is `{ "level": "elementary" }`.
+
+### 3.5 Lessons
 
 #### `GET /api/lessons`
 
@@ -359,11 +406,20 @@ curl http://localhost:5000/api/home \
     "objective": "Start a friendly conversation with a new neighbour.",
     "estimatedMinutes": 5,
     "sentenceCount": 6,
-    "exerciseCount": 12
+    "exerciseCount": 12,
+    "progress": {
+      "status": "available",
+      "bestScore": null,
+      "attempts": 0,
+      "unlockAfter": null
+    },
+    "isCurrent": true
   }
 ]
 ```
 
+The array is ordered by path (`level`, then `order`, then `slug`). Each lesson
+includes `progress` and `isCurrent`.
 Returns an empty array `[]` if no lessons match.
 
 **Error Responses**:
@@ -413,6 +469,13 @@ curl "http://localhost:5000/api/lessons?category=work&level=elementary" \
   "unit": "introductions",
   "order": 1,
   "canDo": "I can introduce myself to a new neighbour.",
+  "progress": {
+    "status": "available",
+    "bestScore": null,
+    "attempts": 0,
+    "unlockAfter": null
+  },
+  "isCurrent": true,
   "focus": "polite questions",
   "objective": "Start a friendly conversation with a new neighbour.",
   "estimatedMinutes": 5,
@@ -467,7 +530,49 @@ curl http://localhost:5000/api/lessons/665f1a2b3c4d5e6f7a8b9c0e \
 
 ---
 
-### 3.5 Conversations
+#### `POST /api/lessons/:lessonId/progress`
+
+Records a completed conversation score for the authenticated user and lesson.
+
+**Request body**:
+
+```json
+{
+  "score": 70,
+  "conversationId": "665f1a2b3c4d5e6f7a8b9c10"
+}
+```
+
+`score` is an integer from 0 to 100 and `conversationId` must be an ObjectId
+belonging to the user and lesson. The conversation must have status
+`"completed"`. A conversation can only be recorded once.
+
+**Success Response** — `200`:
+
+```json
+{
+  "lessonId": "665f1a2b3c4d5e6f7a8b9c0e",
+  "bestScore": 70,
+  "attempts": 1,
+  "passed": true,
+  "newlyPassed": true,
+  "passScore": 60,
+  "nextLessonId": "665f1a2b3c4d5e6f7a8b9c0f",
+  "completedCount": 1,
+  "total": 12
+}
+```
+
+**Error Responses**:
+
+| Status | When | Message |
+| ------ | ---- | ------- |
+| 400 | Invalid score, conversation, or unfinished conversation | Validation or `"Conversation must be completed"` |
+| 401 | Missing/invalid `x-user-id` | `"Unauthorized"` |
+| 404 | Lesson or conversation not found | `"Lesson not found"` or `"Conversation not found"` |
+| 403 | Lesson is locked | `"Finish the previous lesson to unlock this one."`, code `"LESSON_LOCKED"` |
+
+### 3.6 Conversations
 
 #### `POST /api/conversations`
 
@@ -767,7 +872,7 @@ curl http://localhost:5000/api/conversations/665f1a2b3c4d5e6f7a8b9c10 \
 
 ---
 
-### 3.6 Lesson Attempts
+### 3.7 Lesson Attempts
 
 All attempt endpoints require `x-user-id`.
 
@@ -836,7 +941,7 @@ an exercise `mistakeType` and an answer. Mistake-bank records are deduplicated
 using the same user, lesson, original, corrected, and type key as conversation
 corrections.
 
-### 3.7 Speech — TTS
+### 3.8 Speech — TTS
 
 #### `POST /api/speech/tts`
 
@@ -921,7 +1026,7 @@ curl -X POST http://localhost:5000/api/speech/tts \
 
 ---
 
-### 3.8 Speech — STT
+### 3.9 Speech — STT
 
 #### `POST /api/speech/stt`
 
@@ -1005,7 +1110,7 @@ curl -X POST http://localhost:5000/api/speech/stt \
 
 ---
 
-### 3.9 Mistakes
+### 3.10 Mistakes
 
 The mistake bank stores non-null corrections found during conversation turns
 and returns only the authenticated user's mistakes.
@@ -1103,6 +1208,9 @@ curl "http://localhost:5000/api/mistakes/summary" \
 | `dailyGoalMinutes` | number   | No       | `10`    |                                |
 | `placement.selfReported` | string | Yes   | —       | Enum: `Level`                  |
 | `placement.measured`     | string | No    | —       | Enum: `Level`                  |
+| `placement.source`       | string | No    | —       | `test`, `beginner`, or `manual` |
+| `placement.completedAt`  | Date   | No    | —       | Placement completion time       |
+| `placement.sample`       | string | No    | —       | Trimmed Latin-script sample, max 1000 chars |
 | `createdAt`        | Date     | Auto     | —       | Mongoose timestamps            |
 | `updatedAt`        | Date     | Auto     | —       | Mongoose timestamps            |
 
@@ -1404,6 +1512,8 @@ interface OnboardingResponse {
 interface HomeResponse {
   greetingName: string;
   recommendedLesson: LessonListItem | null;
+  pathProgress: { completed: number; total: number };
+  allCompleted: boolean;
 }
 
 interface LessonListItem {
@@ -1419,6 +1529,13 @@ interface LessonListItem {
   unit: string;
   order: number;
   canDo: string;
+  progress: {
+    status: "locked" | "available" | "completed";
+    bestScore: number | null;
+    attempts: number;
+    unlockAfter: { id: string; title: string } | null;
+  };
+  isCurrent: boolean;
 }
 
 interface LessonDetail extends LessonListItem {
@@ -1427,6 +1544,18 @@ interface LessonDetail extends LessonListItem {
   sentences: Sentence[];
   stages: Stage[];
   chat: Chat;
+}
+
+interface LessonProgressResponse {
+  lessonId: string;
+  bestScore: number;
+  attempts: number;
+  passed: boolean;
+  newlyPassed: boolean;
+  passScore: number;
+  nextLessonId: string | null;
+  completedCount: number;
+  total: number;
 }
 
 interface Sentence {
@@ -1664,6 +1793,9 @@ interface User {
   placement: {
     selfReported: Level;
     measured?: Level;
+    source?: 'test' | 'beginner' | 'manual';
+    completedAt?: string;
+    sample?: string;
   };
   createdAt: string;
   updatedAt: string;
@@ -1882,7 +2014,7 @@ requests share one file.
 - Mode: configurable via `mode` request field or `SARVAM_STT_MODE` (default: `codemix`)
 - Modes: `transcribe`, `verbatim`, `codemix`, `translit`
 - Supports 24 Indian language codes (see §4.5)
-- Accepts many audio formats (see §3.8)
+- Accepts many audio formats (see §3.9)
 - Timeout: `SARVAM_STT_TIMEOUT_MS` (default: 15000)
 - Max file size: `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB)
 - Max duration: `STT_MAX_DURATION_SECONDS` (default: 30 seconds)
@@ -1935,6 +2067,8 @@ All environment variable **names** (never values):
 | `STT_MAX_DURATION_SECONDS` | Yes (audio length limit)  | Default: 30, max: 30                     |
 | `KOKORO_TTS_URL`           | No                        | Default: `https://tts-system.vercel.app/api/tts` |
 | `KOKORO_TIMEOUT_MS`        | Yes (latency)             | Default: 90000                           |
+| `LESSONS_UNLOCK_ALL`       | Yes (lesson path)         | Boolean string `"true"`/`"false"`; default: `"false"` |
+| `LESSON_PASS_SCORE`        | Yes (lesson progress)     | Integer 1–100; default: 60                |
 
 ---
 
@@ -1947,7 +2081,7 @@ All environment variable **names** (never values):
 | STT max file size               | `STT_MAX_FILE_SIZE_BYTES` (default: 10 MB / 10,485,760 bytes) |
 | STT max audio duration          | 30 seconds                     |
 | Unknown metadata duration       | Full scan once when within the file-size cap; otherwise Sarvam is the 30-second backstop |
-| STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.8) |
+| STT accepted MIME types         | 24 types, with MIME parameters tolerated (see §3.9) |
 | Recommended recording format    | 16 kHz mono WAV                |
 | TTS output format               | WAV (both providers)           |
 
