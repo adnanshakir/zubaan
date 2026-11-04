@@ -8,16 +8,16 @@ The local development command is `npm run dev`; the production commands are `npm
 The repository does not define a deployment target or Render configuration; deployment behavior is therefore **Not implemented** here.
 Lesson authoring files are seeded into MongoDB, and the HTTP API serves lesson data and records learner activity.
 
-| Area               | Location                                          | Responsibility                                                    |
-| ------------------ | ------------------------------------------------- | ----------------------------------------------------------------- |
-| HTTP composition   | `src/app.ts`, `src/server.ts`                     | Express middleware, routes, startup                               |
-| Routes/controllers | `src/routes/`, `src/controllers/`                 | Request validation and HTTP responses                             |
-| Services           | `src/services/`                                   | Lesson, attempt, conversation, speech, mistake, and home behavior |
-| Persistence        | `src/models/`                                     | Mongoose collections and indexes                                  |
-| Lesson authoring   | `src/seed/lessons/`                               | Typed lesson content and validation                               |
-| Providers          | `src/providers/`                                  | Sarvam LLM/STT/TTS and Kokoro TTS adapters                        |
-| Configuration      | `src/config/env.ts`, `.env.example`               | Environment validation and defaults                               |
-| Reference docs     | `docs/API_REFERENCE.md`, `docs/LESSON_CONTENT.md` | Endpoint and authoring references                                 |
+| Area               | Location                                          | Responsibility                                           |
+| ------------------ | ------------------------------------------------- | -------------------------------------------------------- |
+| HTTP composition   | `src/app.ts`, `src/server.ts`                     | Express middleware, routes, startup                      |
+| Routes/controllers | `src/routes/`, `src/controllers/`                 | Request validation and HTTP responses                    |
+| Services           | `src/services/`                                   | Lesson, attempt, conversation, speech, and home behavior |
+| Persistence        | `src/models/`                                     | Mongoose collections and indexes                         |
+| Lesson authoring   | `src/seed/lessons/`                               | Typed lesson content and validation                      |
+| Providers          | `src/providers/`                                  | Sarvam LLM/STT/TTS and Kokoro TTS adapters               |
+| Configuration      | `src/config/env.ts`, `.env.example`               | Environment validation and defaults                      |
+| Reference docs     | `docs/API_REFERENCE.md`, `docs/LESSON_CONTENT.md` | Endpoint and authoring references                        |
 
 ## 2. Learner journey supported today
 
@@ -34,11 +34,11 @@ flowchart TD
     I -->|more turns| I
     I --> J[Summary<br/>POST /api/conversations/:id/end]
     J --> K[Submit attempt summary<br/>POST /api/attempts/:attemptId/complete]
-    K --> L[Mistakes<br/>GET /api/mistakes and /api/mistakes/summary]
+    K --> L[Lesson summary]
 ```
 
 `GET /api/home` can provide one recommended lesson before the list. All lesson, attempt,
-conversation, speech, and mistake routes require `x-user-id`; onboarding creates the user
+conversation and speech routes require `x-user-id`; onboarding creates the user
 with `POST /api/onboarding`. The exact response contracts are in
 [API_REFERENCE.md](./API_REFERENCE.md).
 
@@ -91,14 +91,14 @@ The union is defined in `src/seed/lessons/types.ts`. The client renders the type
 fields and submits a result; `src/services/attemptService.ts` validates the result enum and
 answer shape, but does not recompute most answers from the submitted answer.
 
-| Type          | Purpose and fields                                                                    | Client/server answer behavior                                                                                                                         | Attempt and mistake bank                                                                                             |
-| ------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `mcq`         | Multiple choice: `prompt`, optional `promptHi`, `options`, `correct`, `explanation`   | Client selects an option and submits `correct` or `wrong`; server checks the result is allowed and the answer is a string                             | Result is stored. If wrong and `mistakeType` is set, the chosen option and `correct` become a mistake                |
-| `gap`         | Fill `___`: `sentence`, `hi`, `options`, `correct`, `explanation`                     | Client selects a string and submits `correct` or `wrong`; server validates string length and builds the completed sentence for mistake text           | Result is stored. A typed `mistakeType` feeds the mistake bank                                                       |
-| `listen_pick` | Listen to `text` and choose: `prompt`, `text`, `options`, `correct`, `explanation`    | TTS supplies `text`; client submits `correct` or `wrong`; validator requires `text === correct` in authoring                                          | Result is stored, but `mistakeType` is forbidden, so it does not feed the mistake bank                               |
-| `match_pairs` | Match translations: `prompt` and 3–6 `{ en, hi }` pairs                               | Client submits `correct` or `wrong`; server does not validate pair selections                                                                         | Result is stored; `mistakeType` is forbidden, so no exercise mistake is created                                      |
-| `order_words` | Build an English sentence: `promptHi`, `answer`, optional `extraWords`, `explanation` | Client submits a string array; server limits it to 30 words, 40 characters per word, and 500 joined characters, but does not compare it with `answer` | Result is stored. When wrong and `mistakeType` is set, the joined submitted words and `answer` feed the mistake bank |
-| `speak`       | Say a referenced sentence: `sentenceId`                                               | Client submits `said`, `close`, `missed`, or `skipped`; server accepts the status and does not run STT or grade it here                               | Result is stored; `mistakeType` is forbidden, so no exercise mistake is created                                      |
+| Type          | Purpose and fields                                                                    | Client/server answer behavior                                                                                                                         | Attempt summary data                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `mcq`         | Multiple choice: `prompt`, optional `promptHi`, `options`, `correct`, `explanation`   | Client selects an option and submits `correct` or `wrong`; server checks the result is allowed and the answer is a string                             | A wrong result with `mistakeType` stores original, corrected, explanation, and type on the attempt result |
+| `gap`         | Fill `___`: `sentence`, `hi`, `options`, `correct`, `explanation`                     | Client selects a string and submits `correct` or `wrong`; server validates string length and builds the completed sentence for result summary         | A wrong result with `mistakeType` stores the completed original and correction on the attempt result      |
+| `listen_pick` | Listen to `text` and choose: `prompt`, `text`, `options`, `correct`, `explanation`    | TTS supplies `text`; client submits `correct` or `wrong`; validator requires `text === correct` in authoring                                          | Result is stored; `mistakeType` is forbidden                                                              |
+| `match_pairs` | Match translations: `prompt` and 3–6 `{ en, hi }` pairs                               | Client submits `correct` or `wrong`; server does not validate pair selections                                                                         | Result is stored; `mistakeType` is forbidden                                                              |
+| `order_words` | Build an English sentence: `promptHi`, `answer`, optional `extraWords`, `explanation` | Client submits a string array; server limits it to 30 words, 40 characters per word, and 500 joined characters, but does not compare it with `answer` | A wrong result with `mistakeType` stores original, corrected, explanation, and type on the attempt result |
+| `speak`       | Say a referenced sentence: `sentenceId`                                               | Client submits `said`, `close`, `missed`, or `skipped`; server accepts the status and does not run STT or grade it here                               | Result is stored; `mistakeType` is forbidden                                                              |
 
 For `mcq`, `gap`, and `order_words`, `mistakeType` may be `grammar`, `tense`,
 `preposition`, or `word_choice`. The attempt keeps one first result per exercise;
@@ -183,7 +183,7 @@ preposition, removing a word, correcting a preposition, recognizing a tense pair
 fixing a close spelling/stem. A turn's `knownMistakes` override those automatic
 explanations when their normalized wrong phrase occurs as a whole-word phrase; up to two
 known explanations are used. The correction and explanation are stored on the user
-message and inserted into the user's deduplicated mistake bank.
+message and returned in the conversation turn response.
 
 The scripted checker cannot judge meaning, broad paraphrases, or arbitrary word-order
 tolerance. For example, `Could you tell me where the nearest shop is?` is compared as
@@ -194,14 +194,13 @@ latest-message correction guard in `conversationLlmService.ts`.
 
 ## 5. Data model
 
-| Collection/model | Fields                                                                                                                                                                                     | Relations and indexes                                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `User`           | `name`, `nativeLanguage`, `level`, `goal`, `dailyGoalMinutes`, `placement.selfReported`, optional `placement.measured`, timestamps                                                         | `nativeLanguage`, level, goal use enums; no explicit indexes                                                                 |
-| `Lesson`         | `slug`, `title`, `category`, `level`, `objective`, `estimatedMinutes`, `sentences`, `stages`, `chat`, timestamps                                                                           | `slug` is unique and indexed; compound `{ category, level }`; embedded sentence/stage/chat documents                         |
-| `LessonAttempt`  | `lessonId`, `userId`, `startedAt`, optional `completedAt`, `bestStreak`, `results[]`                                                                                                       | References `Lesson` and `User`; indexes on `lessonId`, `userId`, and `{ userId, createdAt: -1 }`                             |
-| `Conversation`   | `userId`, `lessonId`, optional `attemptId`, `status`, `messages[]`, `script.turnIndex`, `script.attempts`, `startedAt`, optional `endedAt`, `durationSec`, timestamps                      | References `User`, `Lesson`, and optionally `LessonAttempt`; indexes on `userId` and `{ userId, createdAt: -1 }`             |
-| `Mistake`        | `userId`, optional `conversationId`/`attemptId`, `lessonId`, `original`, `corrected`, `explanation`, `type`, `source`, creation timestamp                                                  | References user/lesson/activity; indexes for user recency, user/type recency, and unique user/lesson/original/corrected/type |
-| `SpeechLog`      | `kind`, `provider`, optional `voice`, `pace`, `mode`, `language`, optional `chars`, `audioSeconds`, `mimeType`, `audioBytes`, `durationMs`, `totalMs`, `ok`, optional `error`, `createdAt` | Index on `{ provider, createdAt: -1 }`; no user relation                                                                     |
+| Collection/model | Fields                                                                                                                                                                                     | Relations and indexes                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `User`           | `name`, `nativeLanguage`, `level`, `goal`, `dailyGoalMinutes`, `placement.selfReported`, optional `placement.measured`, timestamps                                                         | `nativeLanguage`, level, goal use enums; no explicit indexes                                                     |
+| `Lesson`         | `slug`, `title`, `category`, `level`, `objective`, `estimatedMinutes`, `sentences`, `stages`, `chat`, timestamps                                                                           | `slug` is unique and indexed; compound `{ category, level }`; embedded sentence/stage/chat documents             |
+| `LessonAttempt`  | `lessonId`, `userId`, `startedAt`, optional `completedAt`, `bestStreak`, `results[]`                                                                                                       | References `Lesson` and `User`; indexes on `lessonId`, `userId`, and `{ userId, createdAt: -1 }`                 |
+| `Conversation`   | `userId`, `lessonId`, optional `attemptId`, `status`, `messages[]`, `script.turnIndex`, `script.attempts`, `startedAt`, optional `endedAt`, `durationSec`, timestamps                      | References `User`, `Lesson`, and optionally `LessonAttempt`; indexes on `userId` and `{ userId, createdAt: -1 }` |
+| `SpeechLog`      | `kind`, `provider`, optional `voice`, `pace`, `mode`, `language`, optional `chars`, `audioSeconds`, `mimeType`, `audioBytes`, `durationMs`, `totalMs`, `ok`, optional `error`, `createdAt` | Index on `{ provider, createdAt: -1 }`; no user relation                                                         |
 
 The embedded `LessonAttempt.results` fields are `exerciseId`, `stageId`, `type`,
 `result`, optional `retryResult`, `original`, `corrected`, `explanation`, and
@@ -212,17 +211,16 @@ correction, `turnIndex`, optional `revealHint`, optional outcome, and `createdAt
 
 An attempt is created with `POST /api/lessons/:lessonId/attempts`. The client posts one
 result per exercise and then posts `bestStreak` to
-`POST /api/attempts/:attemptId/complete`. The server stores result status and selected
-mistake text, but does not calculate a numeric score or weights.
+`POST /api/attempts/:attemptId/complete`. The server stores result status and selected correction text, but does not
+calculate a numeric score or weights.
 
 Conversation completion stores all messages, status, timestamps, duration, and optional
 attempt relation. Its summary is calculated from stored messages plus the lesson
 sentences: user turn count, duration, correction count, corrections, and target phrases
 used or missed. It is not stored as a separate summary collection.
 
-Per-user data is available through owned attempts, conversations, and the mistake bank.
-Mistakes are deduplicated by user, lesson, original, corrected, and type, and can be
-listed with a type filter and cursor or counted by type.
+Per-user data is available through owned attempts and conversations. Attempt results
+and conversation messages retain correction fields for the client to show in summaries.
 
 The backend does not track resume state, streak history, lesson completion history,
 lesson ordering, lesson unlocking, or a progress aggregate. A conversation can be
@@ -250,7 +248,7 @@ English roleplay. These are the current language constraints.
 
 Protected routes use `attachUser`: the caller supplies `x-user-id`, which must be a valid
 MongoDB ObjectId for an existing `User`. Ownership queries include that user ID for
-attempts, conversations, and mistakes. Onboarding and health are unprotected; generated
+attempts and conversations. Onboarding and health are unprotected; generated
 `/audio/*` files are static and unprotected. There is no JWT/session verification even
 though `JWT_SECRET` is required by environment validation.
 
@@ -324,9 +322,9 @@ are required at runtime.
 8. **Potential unbounded lesson listing/detail payloads** —
    `lessonService.ts` returns all matching lessons and their counts, while detail returns
    full stages and chat. There is no pagination or lesson payload cap. **Size: medium.**
-9. **Some query indexes are absent** — `Mistake` has no standalone lesson index and
-   `SpeechLog` has no time-only index; user-level queries are indexed, but operational
-   retention/reporting queries could degrade with growth. **Size: medium.**
+9. **Some query indexes are absent** — `SpeechLog` has no time-only index; user-level
+   queries are indexed, but operational retention/reporting queries could degrade with
+   growth. **Size: medium.**
 10. **Content changes require deployment and seeding** — the only content path is the
     compiled authoring list plus `npm run seed`; there is no admin/editor endpoint.
     **Size: medium.**
@@ -348,7 +346,6 @@ are required at runtime.
 - Lesson ordering, unlocking, prerequisites, completion history, and progress aggregation.
 - Resume/reopen of an in-progress lesson or conversation.
 - Reminders, streak history, and scheduled notifications.
-- Spaced review or due scheduling for the mistake bank.
 - Analytics dashboards, event analytics, and per-user speech cost attribution.
 - Admin tools, lesson editing, content publishing, and runtime lesson import.
 - Server-side pronunciation scoring for `speak` exercises.

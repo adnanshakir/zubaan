@@ -8,7 +8,6 @@ import { conversationRouter } from './routes/conversationRoutes.js';
 import { attemptRouter } from './routes/attemptRoutes.js';
 import { homeRouter } from './routes/homeRoutes.js';
 import { lessonRouter } from './routes/lessonRoutes.js';
-import { mistakeRouter } from './routes/mistakeRoutes.js';
 import { onboardingRouter } from './routes/onboardingRoutes.js';
 import { placementRouter } from './routes/placementRoutes.js';
 import { speechRouter } from './routes/speechRoutes.js';
@@ -62,7 +61,6 @@ app.use(
 app.use('/api/onboarding', onboardingRouter);
 app.use('/api/placement', placementRouter);
 app.use('/api/lessons', lessonRouter);
-app.use('/api/mistakes', mistakeRouter);
 app.use('/api/conversations', conversationRouter);
 app.use('/api', attemptRouter);
 app.use('/api/home', homeRouter);

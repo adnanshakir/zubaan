@@ -20,7 +20,8 @@ each pair to `lessonSources`. `assertLessonsValid()` runs before any seed write.
 - `chunks`: words/chunks whose joined text equals `text`.
 - `tip`: English pronunciation or usage tip.
 - `why`: optional grammar explanation (defaults to `tip`).
-- `mistakeType`: optional `grammar`, `tense`, `preposition`, or `word_choice`.
+- `mistakeType`: optional `grammar`, `tense`, `preposition`, or `word_choice`;
+  labels the mistake type shown in the lesson summary.
 - `gap`: optional `{ word, options }` gap exercise configuration.
 - `wrong`: optional incorrect sentence alternatives.
 - `distractors`: optional listen-and-pick alternatives.
@@ -76,8 +77,7 @@ does.
 ## Adding content
 
 To add a lesson, create its definition and `hi` translation files, then add
-them to `lessonSources`. Keep ids stable because attempts and mistakes refer to
-them. To add a language, create a new hi-style translation file, add it to the
+them to `lessonSources`. Keep ids stable because attempts refer to them. To add a language, create a new hi-style translation file, add it to the
 lesson's `lessonSources` entry, and add the language to `SUPPORTED_LANGS` in
 `src/services/lessonBuilder.ts`.
 

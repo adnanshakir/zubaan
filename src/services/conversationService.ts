@@ -18,7 +18,6 @@ import {
   type Correction,
 } from './conversationLlmService.js';
 import { buildConversationFeedback, type ConversationFeedback } from './feedbackService.js';
-import { recordMistake } from './mistakeService.js';
 import { stepScript, type ScriptState } from '../utils/scripted-lesson.js';
 import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
 import { assertLessonUnlocked, type ProgressUser } from './progressService.js';
@@ -282,15 +281,6 @@ export async function takeConversationTurn(
       }
     }
     await updatedConversation.save();
-    if (correction) {
-      await recordMistake({
-        userId: user._id,
-        conversationId: existingConversation._id,
-        lessonId: existingConversation.lessonId,
-        original: input.text,
-        correction,
-      });
-    }
     return {
       reply: step.reply,
       audioUrl: aiAudioUrl,
@@ -377,21 +367,15 @@ export async function takeConversationTurn(
 
   await updatedConversation.save();
 
-  if (correction) {
-    await recordMistake({
-      userId: user._id,
-      conversationId: existingConversation._id,
-      lessonId: existingConversation.lessonId,
-      original: input.text,
-      correction,
-    });
-  }
-
   return {
     reply: output.reply,
     audioUrl: aiAudioUrl,
     endConversation,
     turnsRemaining,
+    hasMistake: correction !== null,
+    corrected: correction?.corrected ?? '',
+    explanation: correction?.explanation ?? '',
+    mistakeType: correction?.type ?? 'other',
     correction,
     feedback,
   };

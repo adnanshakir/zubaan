@@ -1,7 +1,7 @@
 import type { KnownMistake, MistakeKind } from './types.js';
 
 export interface PhraseDef {
-  id: string; // 'p1', stable forever: results and mistakes point at it
+  id: string; // 'p1', stable forever: attempts point at it
   text: string;
   chunks: readonly string[]; // chunks.join(' ') must equal text
   tip: string; // how to say it, in English
