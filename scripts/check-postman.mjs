@@ -55,7 +55,6 @@ const prefixes = {
   conversationRoutes: '/api/conversations',
   homeRoutes: '/api/home',
   lessonRoutes: '/api/lessons',
-  mistakeRoutes: '/api/mistakes',
   onboardingRoutes: '/api/onboarding',
   speechRoutes: '/api/speech',
 };

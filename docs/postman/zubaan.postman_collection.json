@@ -265,7 +265,10 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "x-user-id", "value": "{{userId}}" }
+              {
+                "key": "x-user-id",
+                "value": "{{userId}}"
+              }
             ],
             "url": "{{baseUrl}}/placement?lang=hi",
             "description": "Returns the localized four-tier placement ladder. Auth: required."
@@ -288,13 +291,23 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{userId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{userId}}"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"answers\": [\n    { \"itemId\": \"p1-1\", \"passed\": true },\n    { \"itemId\": \"p1-2\", \"passed\": true, \"skipped\": false }\n  ],\n  \"sample\": \"I went to work today.\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": "{{baseUrl}}/placement/result",
             "description": "Scores placement answers and saves the measured level. Auth: required."
@@ -317,13 +330,23 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{userId}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{userId}}"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"level\": \"elementary\",\n  \"source\": \"manual\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": "{{baseUrl}}/placement/level",
             "description": "Sets a manual or beginner placement level. Auth: required."
@@ -1322,7 +1345,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"recorded\": true,\n  \"mistakeSaved\": true\n}"
+              "body": "{\n  \"recorded\": true\n}"
             },
             {
               "name": "400 validation error",
@@ -1782,215 +1805,6 @@
                 }
               ],
               "body": "{\n  \"text\": \"I moved in last week.\",\n  \"languageCode\": \"en-IN\",\n  \"provider\": \"sarvam\",\n  \"mode\": \"transcribe\",\n  \"totalMs\": 0,\n  \"durationMs\": 1\n}"
-            },
-            {
-              "name": "400 validation error",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/example"
-              },
-              "status": "Bad Request",
-              "code": 400,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": {\n    \"message\": \"Invalid request\"\n  }\n}"
-            },
-            {
-              "name": "401 unauthorized",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/example"
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": {\n    \"message\": \"Unauthorized\"\n  }\n}"
-            },
-            {
-              "name": "404 not found",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/example"
-              },
-              "status": "Not Found",
-              "code": 404,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": {\n    \"message\": \"Lesson not found\"\n  }\n}"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Mistakes",
-      "item": [
-        {
-          "name": "GET /api/mistakes - list mistakes",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "x-user-id",
-                "value": "{{userId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/mistakes?type=tense&limit=20",
-            "description": "Auth: required via the x-user-id header, which must be a real MongoDB ObjectId belonging to an onboarded user. Query: type (optional mistake type); limit (optional integer 1-100); before (optional 24-hex cursor)."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status code is 200', function () { pm.response.to.have.status(200); });",
-                  "pm.test('Response is JSON', function () { pm.response.to.have.header('Content-Type', /json/); });",
-                  "const data = pm.response.json();",
-                  "pm.test('Response is an array', function () { pm.expect(data).to.be.an('array'); });"
-                ]
-              }
-            }
-          ],
-          "response": [
-            {
-              "name": "Success",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/example"
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "[\n  {\n    \"id\": \"665f1a2b3c4d5e6f7a8b9c0e\",\n    \"slug\": \"work-update\",\n    \"title\": \"Give a work update\",\n    \"category\": \"work\",\n    \"level\": \"elementary\",\n    \"objective\": \"Share a clear update.\",\n    \"estimatedMinutes\": 6,\n    \"sentenceCount\": 3,\n    \"exerciseCount\": 6\n  }\n]"
-            },
-            {
-              "name": "400 validation error",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/example"
-              },
-              "status": "Bad Request",
-              "code": 400,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": {\n    \"message\": \"Invalid request\"\n  }\n}"
-            },
-            {
-              "name": "401 unauthorized",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/example"
-              },
-              "status": "Unauthorized",
-              "code": 401,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": {\n    \"message\": \"Unauthorized\"\n  }\n}"
-            },
-            {
-              "name": "404 not found",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/example"
-              },
-              "status": "Not Found",
-              "code": 404,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": {\n    \"message\": \"Lesson not found\"\n  }\n}"
-            }
-          ]
-        },
-        {
-          "name": "GET /api/mistakes/summary - summarize mistakes",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "x-user-id",
-                "value": "{{userId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/mistakes/summary",
-            "description": "Auth: required via the x-user-id header, which must be a real MongoDB ObjectId belonging to an onboarded user."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status code is 200', function () { pm.response.to.have.status(200); });",
-                  "pm.test('Response is JSON', function () { pm.response.to.have.header('Content-Type', /json/); });",
-                  "const data = pm.response.json();",
-                  "pm.test('Response has mistakeSummary', function () { pm.expect(data).to.have.property('mistakeSummary'); });"
-                ]
-              }
-            }
-          ],
-          "response": [
-            {
-              "name": "Success",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/example"
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"total\": 1,\n  \"byType\": {\n    \"tense\": 1\n  }\n}"
             },
             {
               "name": "400 validation error",
@@ -2622,7 +2436,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"recorded\": true,\n  \"mistakeSaved\": true\n}"
+              "body": "{\n  \"recorded\": true\n}"
             },
             {
               "name": "400 validation error",
@@ -2737,7 +2551,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"recorded\": true,\n  \"mistakeSaved\": true\n}"
+              "body": "{\n  \"recorded\": true\n}"
             },
             {
               "name": "400 validation error",

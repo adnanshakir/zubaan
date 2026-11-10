@@ -5,7 +5,7 @@
 > the same commit. Search for the endpoint's `###` heading and verify every
 > field, status code, and example still matches the code.
 
-> **Last verified against code**: 2026-11-03
+> **Last verified against code**: 2026-11-04
 
 ---
 
@@ -23,7 +23,6 @@
    - [Lesson Attempts](#37-lesson-attempts)
    - [Speech — TTS](#38-speech--tts)
    - [Speech — STT](#39-speech--stt)
-   - [Mistakes](#310-mistakes)
 4. [Data Models](#4-data-models)
 5. [Flows](#5-flows)
 6. [Providers and Configuration](#6-providers-and-configuration)
@@ -130,8 +129,7 @@ exists in code.
 
 Requests that use validation middleware are validated with Zod schemas. The
 middleware parses `{ body, params, query }` against the schema; routes without
-validation middleware (such as health, home, and mistake summary) do not run a
-Zod validation step.
+validation middleware (such as health and home) do not run a Zod validation step.
 
 On validation failure, the response is:
 
@@ -900,15 +898,14 @@ gap/listen-pick/type-gap/dictation/reply-speak and an array of at most 30
 strings, each at most 40 characters, for order-words. Type-gap and dictation
 answers must be at most 200 characters; other answer text, or the joined
 order-words answer, must be at most 500 characters. The server resolves
-`stageId` and exercise type from the stored lesson. A second
-non-retry submission returns `{ "recorded": false, "mistakeSaved": false }`.
-Retries only accept `correct` or `wrong`, update `retryResult`, and never
-create a mistake.
+`stageId` and exercise type from the stored lesson. A second non-retry submission returns `{ "recorded": false }`. Retries only
+accept `correct` or `wrong`, update `retryResult`, and never create a first
+result.
 
 Success response (`200`):
 
 ```json
-{ "recorded": true, "mistakeSaved": true }
+{ "recorded": true }
 ```
 
 #### `POST /api/attempts/:attemptId/complete`
@@ -936,10 +933,10 @@ Returns:
 }
 ```
 
-An exercise mistake is saved only for a first, non-retry `wrong` result with
-an exercise `mistakeType` and an answer. Mistake-bank records are deduplicated
-using the same user, lesson, original, corrected, and type key as conversation
-corrections.
+For a first, non-retry `wrong` result with an exercise `mistakeType` and an
+answer, the result stores `original`, `corrected`, `explanation`, and
+`mistakeType`. The attempt response builds its `mistakes` array from those
+stored result fields.
 
 ### 3.8 Speech — TTS
 
@@ -1110,90 +1107,6 @@ curl -X POST http://localhost:5000/api/speech/stt \
 
 ---
 
-### 3.10 Mistakes
-
-The mistake bank stores non-null corrections found during conversation turns
-and returns only the authenticated user's mistakes.
-
-**Authentication**: `x-user-id` header.
-
-#### `GET /api/mistakes`
-
-Lists mistakes newest first using cursor pagination.
-
-| Query parameter | Type   | Required | Notes |
-| --------------- | ------ | -------- | ----- |
-| `type`          | string | No       | `grammar`, `tense`, `preposition`, `word_choice`, or `other` |
-| `limit`         | number | No       | 1–50; default `20` |
-| `before`        | string | No       | 24-character MongoDB ObjectId cursor |
-
-**Response `200`**:
-
-```json
-{
-  "items": [
-    {
-      "id": "665f1a2b3c4d5e6f7a8b9c0d",
-      "original": "I goed there",
-      "corrected": "I went there",
-      "explanation": "Use the past tense went, not goed.",
-      "type": "tense",
-      "conversationId": "665f1a2b3c4d5e6f7a8b9c0e",
-      "lessonId": "665f1a2b3c4d5e6f7a8b9c0f",
-      "createdAt": "2026-10-23T12:00:00.000Z"
-    }
-  ],
-  "nextBefore": "665f1a2b3c4d5e6f7a8b9c0d"
-}
-```
-
-Pass the previous response's `nextBefore` as `before` to fetch the next page;
-`null` means there are no more pages.
-
-**Errors**:
-
-| Status | Condition |
-| ------ | --------- |
-| 400    | Invalid query or cursor |
-| 401    | Missing or invalid `x-user-id` |
-
-#### `GET /api/mistakes/summary`
-
-Returns the authenticated user's total mistakes and counts by mistake type.
-
-**Response `200`**:
-
-```json
-{
-  "total": 1,
-  "byType": {
-    "grammar": 0,
-    "tense": 1,
-    "preposition": 0,
-    "word_choice": 0,
-    "other": 0
-  }
-}
-```
-
-**Errors**:
-
-| Status | Condition |
-| ------ | --------- |
-| 401    | Missing or invalid `x-user-id` |
-
-**Example curl**:
-
-```bash
-curl "http://localhost:5000/api/mistakes?type=tense&limit=20" \
-  -H "x-user-id: 665f1a2b3c4d5e6f7a8b9c0d"
-
-curl "http://localhost:5000/api/mistakes/summary" \
-  -H "x-user-id: 665f1a2b3c4d5e6f7a8b9c0d"
-```
-
----
-
 ## 4. Data Models
 
 ### 4.1 User
@@ -1320,22 +1233,6 @@ Each turn also has `repeat`, optional `alternatives`, and optional
 | `ok`          | boolean  | Yes      |                                    |
 | `error`       | string   | No       | Max 160 chars                      |
 | `createdAt`   | Date     | Yes      | Default: now                       |
-
-**Mistake**:
-
-| Field            | Type       | Required | Default | Notes |
-| ---------------- | ---------- | -------- | ------- | ----- |
-| `_id`            | ObjectId   | Auto     | —       | |
-| `userId`         | ObjectId   | Yes      | —       | Reference to `User` |
-| `conversationId` | ObjectId   | No       | —       | Reference to `Conversation` |
-| `attemptId`      | ObjectId   | No       | —       | Reference to `LessonAttempt` |
-| `lessonId`       | ObjectId   | Yes      | —       | Reference to `Lesson` |
-| `original`       | string     | Yes      | —       | Trimmed; max 500 chars |
-| `corrected`      | string     | Yes      | —       | Trimmed; max 500 chars |
-| `explanation`    | string     | No       | `""`    | Trimmed; max 160 chars |
-| `type`           | MistakeType | Yes     | —       | |
-| `source`         | string      | Yes     | `"conversation"` | `"conversation"` or `"exercise"` |
-| `createdAt`      | Date        | Yes      | Auto    | Newest-first indexes by user |
 
 ### 4.4 LessonAttempt
 
@@ -1714,27 +1611,6 @@ interface Correction {
   type: MistakeType;
 }
 
-interface MistakeItem {
-  id: string;
-  original: string;
-  corrected: string;
-  explanation: string;
-  type: MistakeType;
-  conversationId: string;
-  lessonId: string;
-  createdAt: string;
-}
-
-interface MistakesListResponse {
-  items: MistakeItem[];
-  nextBefore: string | null;
-}
-
-interface MistakesSummaryResponse {
-  total: number;
-  byType: Record<MistakeType, number>;
-}
-
 interface FeedbackCorrection {
   original: string;
   corrected: string;
@@ -1895,7 +1771,7 @@ the conversation.
    - **Server** calls LLM to generate AI reply
    - **Server** calls TTS to synthesize AI reply
    - **Server** appends AI message
-   - Each turn with a non-null correction also stores a `Mistake` for the user.
+   - Each turn with a non-null correction stores it on the user message.
    - Returns `{ reply, audioUrl, endConversation, turnsRemaining, correction, feedback }`
 
 6. **Client** plays the AI reply audio
@@ -2227,7 +2103,6 @@ not exist yet**. Do not build frontend features that depend on these.
 | **`PATCH /api/users/me`**        | Listed in AGENT.md but **no route, controller, or service exists**. |
 | **`GET /api/users/me`**          | Listed in AGENT.md but **no route, controller, or service exists**. |
 | **`POST /api/conversations/:id/retry`** | Listed in AGENT.md but **no route exists**. |
-| **`GET /api/mistakes/due`**      | Listed in AGENT.md but **no route, model, or service exists**. |
 | **`POST /api/vocabulary`**       | Listed in AGENT.md but **no route, model, or service exists**. |
 | **`GET /api/vocabulary`**        | Listed in AGENT.md but **no route, model, or service exists**. |
 | **`GET /api/progress`**          | Listed in AGENT.md but **no route or service exists**. |
@@ -2259,8 +2134,6 @@ not exist yet**. Do not build frontend features that depend on these.
 | `GET /api/conversations/:id`          | ✅ §3.5     |
 | `POST /api/speech/tts`                | ✅ §3.7     |
 | `POST /api/speech/stt`                | ✅ §3.8     |
-| `GET /api/mistakes`                   | ✅ §3.9     |
-| `GET /api/mistakes/summary`           | ✅ §3.9     |
 | `GET /audio/*` (static)               | ✅ §1       |
 
 ### Endpoints listed in AGENT.md but **NOT** in code:
@@ -2271,7 +2144,6 @@ not exist yet**. Do not build frontend features that depend on these.
 | `GET /api/users/me`                      | Not implemented  |
 | `PATCH /api/users/me`                    | Not implemented  |
 | `POST /api/conversations/:id/retry`      | Not implemented  |
-| `GET /api/mistakes/due`                  | Not implemented  |
 | `POST /api/vocabulary`                   | Not implemented  |
 | `GET /api/vocabulary`                    | Not implemented  |
 | `GET /api/progress`                      | Not implemented  |

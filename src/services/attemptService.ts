@@ -4,7 +4,6 @@ import type { UserDocument } from '../models/User.js';
 import { User } from '../models/User.js';
 import { getBuiltLesson, resolveLang } from './lessonBuilder.js';
 import { LessonAttempt, type LessonAttemptDocument } from '../models/LessonAttempt.js';
-import { createMistake } from './mistakeService.js';
 import { ApiError } from '../utils/ApiError.js';
 import { assertLessonUnlocked, type ProgressUser } from './progressService.js';
 import type { AttemptResultInput, CompleteAttemptInput } from '../validators/attemptValidator.js';
@@ -167,11 +166,10 @@ export async function recordAttemptResult(
     }
     existing.retryResult = input.result as 'correct' | 'wrong';
     await attempt.save();
-    return { recorded: true, mistakeSaved: false };
+    return { recorded: true };
   }
-  if (existing) return { recorded: false, mistakeSaved: false };
+  if (existing) return { recorded: false };
 
-  let mistakeSaved = false;
   const result = {
     exerciseId: input.exerciseId,
     stageId: stage.id,
@@ -184,22 +182,10 @@ export async function recordAttemptResult(
     result.corrected = text.corrected;
     result.explanation = exercise.explanation;
     result.mistakeType = exercise.mistakeType;
-    mistakeSaved = await createMistake({
-      userId,
-      attemptId: attempt._id,
-      lessonId: attempt.lessonId,
-      original: text.original,
-      correction: {
-        corrected: text.corrected,
-        explanation: exercise.explanation ?? '',
-        type: exercise.mistakeType,
-      },
-      source: 'exercise',
-    });
   }
   attempt.results.push(result);
   await attempt.save();
-  return { recorded: true, mistakeSaved };
+  return { recorded: true };
 }
 
 export async function completeAttempt(
